@@ -78,13 +78,18 @@ struct ClipboardListView: View {
                     .frame(maxHeight: .infinity)
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 10) {
-                        ForEach(filteredItems) { item in
-                            ClipboardCard(
-                                item: item,
-                                onCopy: { store.copyToClipboard(item) },
-                                onDelete: { store.remove(item) }
-                            )
+                    let columns = waterfallColumns(from: filteredItems)
+                    HStack(alignment: .top, spacing: 10) {
+                        ForEach(0..<2, id: \.self) { col in
+                            LazyVStack(spacing: 10) {
+                                ForEach(columns[col]) { item in
+                                    ClipboardCard(
+                                        item: item,
+                                        onCopy: { store.copyToClipboard(item) },
+                                        onDelete: { store.remove(item) }
+                                    )
+                                }
+                            }
                         }
                     }
                     .padding(.vertical, 4)
@@ -92,6 +97,29 @@ struct ClipboardListView: View {
             }
         }
         .animation(.easeInOut(duration: 0.16), value: filteredItems.count)
+    }
+
+    private func waterfallColumns(from items: [ClipboardItem]) -> [[ClipboardItem]] {
+        var columns: [[ClipboardItem]] = [[], []]
+        var heights: [CGFloat] = [0, 0]
+        for item in items {
+            let col = heights[0] <= heights[1] ? 0 : 1
+            columns[col].append(item)
+            heights[col] += estimatedHeight(for: item)
+        }
+        return columns
+    }
+
+    private func estimatedHeight(for item: ClipboardItem) -> CGFloat {
+        switch item.type {
+        case .image: return 200
+        case .file: return 100
+        case .text:
+            let len = item.displayText.count
+            if len > 100 { return 150 }
+            if len > 40 { return 120 }
+            return 90
+        }
     }
 
     private var headerBar: some View {
@@ -262,80 +290,85 @@ private struct ClipboardCard: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(accent.opacity(0.18))
-                Image(systemName: item.type.icon)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(accent)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                HStack(spacing: 4) {
+                    Image(systemName: item.type.icon)
+                        .font(.system(size: 10, weight: .semibold))
+                    Text(item.type.label)
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                }
+                .foregroundStyle(accent)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(accent.opacity(0.15), in: Capsule())
+
+                Spacer()
+
+                HStack(spacing: 6) {
+                    Button(action: onCopy) {
+                        Image(systemName: "doc.on.doc")
+                    }
+                    .buttonStyle(CardIconButtonStyle(tint: accent))
+
+                    Button(role: .destructive, action: onDelete) {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(CardIconButtonStyle(tint: .pink))
+                }
+                .opacity(isHovering ? 1 : 0)
             }
-            .frame(width: 34, height: 34)
 
             if let previewImage {
                 Image(nsImage: previewImage)
                     .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: 70, height: 52)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: .infinity)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
 
-            VStack(alignment: .leading, spacing: 7) {
-                Text(item.displayText)
-                    .lineLimit(item.type == .text ? 3 : 2)
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.primary)
+            Text(item.displayText)
+                .lineLimit(item.type == .text ? 6 : 2)
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundStyle(.primary)
 
-                HStack(spacing: 8) {
-                    Image(systemName: "clock")
-                    Text(ClipboardTimeFormatter.shared.string(from: item.timestamp))
+            HStack(spacing: 6) {
+                Image(systemName: "clock")
+                    .font(.system(size: 10))
+                Text(ClipboardTimeFormatter.shared.string(from: item.timestamp))
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
 
-                    if let app = item.sourceApp, !app.isEmpty {
-                        HStack(spacing: 5) {
-                            if let sourceAppIcon {
-                                Image(nsImage: sourceAppIcon)
-                                    .resizable()
-                                    .interpolation(.high)
-                                    .frame(width: 14, height: 14)
-                                    .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
-                            }
-                            Text(app)
+                if let app = item.sourceApp, !app.isEmpty {
+                    Spacer()
+                    HStack(spacing: 4) {
+                        if let sourceAppIcon {
+                            Image(nsImage: sourceAppIcon)
+                                .resizable()
+                                .interpolation(.high)
+                                .frame(width: 12, height: 12)
+                                .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .background(Color.secondary.opacity(0.12), in: Capsule())
+                        Text(app)
+                            .font(.system(size: 10, weight: .medium, design: .rounded))
                     }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.secondary.opacity(0.12), in: Capsule())
                 }
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
-                .foregroundStyle(.secondary)
             }
-
-            Spacer()
-
-            VStack(spacing: 8) {
-                Button(action: onCopy) {
-                    Image(systemName: "doc.on.doc")
-                }
-                .buttonStyle(CardIconButtonStyle(tint: accent))
-
-                Button(role: .destructive, action: onDelete) {
-                    Image(systemName: "trash")
-                }
-                .buttonStyle(CardIconButtonStyle(tint: .pink))
-            }
-            .opacity(isHovering ? 1 : 0.82)
+            .foregroundStyle(.secondary)
         }
-        .padding(12)
+        .padding(10)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Color(nsColor: .controlBackgroundColor).opacity(0.72))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Color.accentColor.opacity(isPressing ? 0.08 : 0))
         )
         .scaleEffect(isPressing ? 0.988 : 1)
@@ -391,8 +424,8 @@ private enum ClipboardTimeFormatter {
     static let shared: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = .current
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .medium
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
         return formatter
     }()
 }

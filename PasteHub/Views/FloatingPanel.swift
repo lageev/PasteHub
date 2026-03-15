@@ -13,8 +13,8 @@ final class FloatingPanel: NSPanel, NSWindowDelegate {
         )
 
         delegate = self
-        isFloatingPanel = true
-        level = .floating
+        isFloatingPanel = false
+        level = .normal
         isMovableByWindowBackground = true
         titlebarAppearsTransparent = true
         titlebarSeparatorStyle = .none
@@ -44,23 +44,34 @@ final class FloatingPanel: NSPanel, NSWindowDelegate {
     }
 
     func toggle() {
-        if isPresented {
+        if shouldHideOnToggle {
             hide()
         } else {
             show()
         }
     }
 
+    private var shouldHideOnToggle: Bool {
+        isPresented && isVisible && NSApp.isActive && isKeyWindow
+    }
+
     private func show() {
         isPresented = true
-        center()
+        if !isVisible { center() }
+        level = .floating
         NSApp.activate(ignoringOtherApps: true)
-        makeKeyAndOrderFront(nil)
         orderFrontRegardless()
+        makeKeyAndOrderFront(nil)
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.level = .normal
+            self.makeKeyAndOrderFront(nil)
+        }
     }
 
     private func hide() {
         isPresented = false
+        level = .normal
         orderOut(nil)
     }
 }

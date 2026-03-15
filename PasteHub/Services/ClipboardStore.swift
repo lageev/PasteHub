@@ -7,16 +7,18 @@ import Observation
 final class ClipboardStore {
     private(set) var items: [ClipboardItem] = []
 
-    let maxItems: Int
+    var maxItems: Int {
+        let v = UserDefaults.standard.integer(forKey: "maxHistoryCount")
+        return v > 0 ? v : 50
+    }
+
     let imagesDirectory: URL
     var onClipboardWrite: (() -> Void)?
 
     private let storageURL: URL
     private let maxTextLength = 20_000
 
-    init(maxItems: Int = 50) {
-        self.maxItems = maxItems
-
+    init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let appDir = appSupport.appendingPathComponent("PasteHub")
         storageURL = appDir.appendingPathComponent("history.json")

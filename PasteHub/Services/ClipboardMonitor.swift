@@ -5,11 +5,13 @@ final class ClipboardMonitor {
     private var task: Task<Void, Never>?
     private var lastChangeCount: Int = 0
     private let store: ClipboardStore
+    private let settings: SettingsManager
     private let pasteboard = NSPasteboard.general
     private let pollInterval: Duration = .milliseconds(400)
 
-    init(store: ClipboardStore) {
+    init(store: ClipboardStore, settings: SettingsManager) {
         self.store = store
+        self.settings = settings
         lastChangeCount = pasteboard.changeCount
     }
     func start() {
@@ -39,8 +41,11 @@ final class ClipboardMonitor {
         lastChangeCount = pasteboard.changeCount
 
         let frontmostApp = NSWorkspace.shared.frontmostApplication
-        let sourceApp = frontmostApp?.localizedName
         let sourceBundleIdentifier = frontmostApp?.bundleIdentifier
+
+        if settings.isAppExcluded(bundleIdentifier: sourceBundleIdentifier) { return }
+
+        let sourceApp = frontmostApp?.localizedName
         let types = pasteboard.types ?? []
 
         // 1) 文件 URL
