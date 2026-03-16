@@ -3,9 +3,9 @@ import ApplicationServices
 
 @MainActor
 final class PasteToAppService {
-    static let accessibilityPromptedKey = "accessibilityPromptedOnce"
+    private static let accessibilityPromptedKey = "accessibilityPromptedOnce"
 
-    nonisolated static func resetAccessibilityPromptCache() {
+    static func resetAccessibilityPromptCache() {
         UserDefaults.standard.removeObject(forKey: accessibilityPromptedKey)
     }
 

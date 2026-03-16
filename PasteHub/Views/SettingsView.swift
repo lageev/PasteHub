@@ -164,7 +164,8 @@ private struct HotkeyTab: View {
                     .buttonStyle(.borderedProminent)
 
                     Button("重置提示缓存") {
-                        UserDefaults.standard.removeObject(forKey: PasteToAppService.accessibilityPromptedKey)
+                        PasteToAppService.resetAccessibilityPromptCache()
+                        refreshAccessibilityState()
                     }
                     .buttonStyle(.bordered)
                 }

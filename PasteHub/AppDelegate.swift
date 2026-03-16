@@ -128,7 +128,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if panel?.isVisible == true {
             panel?.toggle()
         }
-        guard item.type == .text else { return }
         pasteService.pasteIntoRememberedAppIfPossible()
     }
 
