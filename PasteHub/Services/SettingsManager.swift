@@ -9,6 +9,24 @@ struct ExcludedApp: Codable, Identifiable, Hashable {
     var id: String { bundleIdentifier }
 }
 
+enum PanelEdge: String, CaseIterable, Identifiable {
+    case bottom
+    case top
+    case left
+    case right
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .bottom: return "底部"
+        case .top: return "顶部"
+        case .left: return "左侧"
+        case .right: return "右侧"
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class SettingsManager {
@@ -38,7 +56,15 @@ final class SettingsManager {
         }
     }
 
+    var panelEdge: PanelEdge {
+        didSet {
+            UserDefaults.standard.set(panelEdge.rawValue, forKey: "panelEdge")
+            onPanelEdgeChanged?()
+        }
+    }
+
     var onHotkeyChanged: (() -> Void)?
+    var onPanelEdgeChanged: (() -> Void)?
 
     init() {
         let d = UserDefaults.standard
@@ -68,6 +94,13 @@ final class SettingsManager {
             excludedApps = decoded
         } else {
             excludedApps = []
+        }
+
+        if let raw = d.string(forKey: "panelEdge"),
+           let edge = PanelEdge(rawValue: raw) {
+            panelEdge = edge
+        } else {
+            panelEdge = .bottom
         }
     }
 

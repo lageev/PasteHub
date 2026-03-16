@@ -36,6 +36,13 @@ private struct GeneralTab: View {
             Section("系统") {
                 Toggle("开机自动启动", isOn: $settings.launchAtLogin)
             }
+            Section("面板") {
+                Picker("弹出位置", selection: $settings.panelEdge) {
+                    ForEach(PanelEdge.allCases) { edge in
+                        Text(edge.title).tag(edge)
+                    }
+                }
+            }
         }
         .formStyle(.grouped)
     }
@@ -65,11 +72,11 @@ private struct HotkeyTab: View {
                 ShortcutRow(label: "退出应用", shortcut: "\u{2318}Q")
             }
             Section("面板操作") {
-                ShortcutRow(label: "重新复制条目", shortcut: "双击卡片")
-                ShortcutRow(label: "删除 / 重新复制", shortcut: "右键菜单")
+                ShortcutRow(label: "完成键入条目", shortcut: "单击卡片")
+                ShortcutRow(label: "重新复制 / 标签 / 删除", shortcut: "卡片按钮或右键菜单")
             }
             Section {
-                Text("点击全局快捷键区域后按下新的组合键即可修改，按 Esc 取消")
+                Text("点击全局快捷键区域后按下新的组合键即可修改，按 Esc 取消。单击卡片会先复制内容，再尝试自动键入。首次授予辅助功能权限后建议重启 PasteHub；若仍无效，请在系统设置中删除后重新添加 PasteHub 权限。")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }

@@ -6,6 +6,7 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var store = ClipboardStore()
     private(set) var settings = SettingsManager()
+    private let pasteService = PasteToAppService()
     private var monitor: ClipboardMonitor!
     private var panel: FloatingPanel!
     private var statusItem: NSStatusItem!
@@ -28,6 +29,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         settings.onHotkeyChanged = { [weak self] in
             self?.reloadHotKey()
+        }
+        settings.onPanelEdgeChanged = { [weak self] in
+            self?.panel?.updatePlacementIfVisible()
         }
     }
 
@@ -69,10 +73,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Floating Panel
 
     private func setupPanel() {
-        panel = FloatingPanel(rootView: ClipboardListView(store: store))
+        panel = FloatingPanel(
+            rootView: ClipboardListView(
+                store: store,
+                settings: settings,
+                onOpenSettings: { [weak self] in
+                    self?.showSettings()
+                },
+                onActivateItem: { [weak self] item in
+                    self?.handleItemActivation(item)
+                }
+            ),
+            settings: settings
+        )
     }
 
     @objc func togglePanel() {
+        if panel?.isVisible != true {
+            pasteService.rememberFrontmostExternalApp()
+        }
         panel?.toggle()
     }
 
@@ -102,6 +121,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func clearHistory() {
         store.clearAll()
+    }
+
+    private func handleItemActivation(_ item: ClipboardItem) {
+        store.copyToClipboard(item)
+        if panel?.isVisible == true {
+            panel?.toggle()
+        }
+        guard item.type == .text else { return }
+        pasteService.pasteIntoRememberedAppIfPossible()
     }
 
     @objc private func quitApp() {
