@@ -4,6 +4,7 @@ DerivedData/
 *.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/
 xcuserdata/
+PasteHub/PasteHub.xcodeproj/
 
 # macOS
 .DS_Store
