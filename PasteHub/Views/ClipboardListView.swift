@@ -708,10 +708,17 @@ private struct HorizontalWheelScrollView<Content: View>: NSViewRepresentable {
 
 private final class WheelEnabledHorizontalScrollView: NSScrollView {
     var onLayout: (() -> Void)?
+    private var isLayoutCallbackScheduled = false
 
     override func layout() {
         super.layout()
-        onLayout?()
+        guard !isLayoutCallbackScheduled else { return }
+        isLayoutCallbackScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.isLayoutCallbackScheduled = false
+            self.onLayout?()
+        }
     }
 
     override func scrollWheel(with event: NSEvent) {

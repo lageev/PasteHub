@@ -11,16 +11,40 @@ final class PasteToAppService {
 
     private var targetBundleIdentifier: String?
     private var targetProcessIdentifier: pid_t?
-    private let maxSearchDepth = 7
+    private var targetFocusedElement: AXUIElement?
+    private var targetFocusedElementProcessIdentifier: pid_t?
+    private let maxSearchDepth = 8
     private let maxChildrenPerNode = 80
     private let searchFieldRole = "AXSearchField"
+    private let webAreaRole = "AXWebArea"
     private let editableAttribute = "AXEditable"
+    private let selectedTextAttribute = "AXSelectedText"
+    private let traversalAttributes: [CFString] = [
+        kAXContentsAttribute as CFString,
+        kAXVisibleChildrenAttribute as CFString,
+        kAXChildrenAttribute as CFString
+    ]
 
     func rememberFrontmostExternalApp() {
         guard let frontmost = NSWorkspace.shared.frontmostApplication else { return }
-        guard frontmost.bundleIdentifier != Bundle.main.bundleIdentifier else { return }
+        guard frontmost.bundleIdentifier != Bundle.main.bundleIdentifier else {
+            targetBundleIdentifier = nil
+            targetProcessIdentifier = nil
+            targetFocusedElement = nil
+            targetFocusedElementProcessIdentifier = nil
+            return
+        }
         targetBundleIdentifier = frontmost.bundleIdentifier
         targetProcessIdentifier = frontmost.processIdentifier
+
+        let appElement = AXUIElementCreateApplication(frontmost.processIdentifier)
+        if let focusedElement = copyElementValue(from: appElement, attribute: kAXFocusedUIElementAttribute as CFString) {
+            targetFocusedElement = deepestFocusedElement(startingFrom: focusedElement)
+            targetFocusedElementProcessIdentifier = frontmost.processIdentifier
+        } else {
+            targetFocusedElement = nil
+            targetFocusedElementProcessIdentifier = nil
+        }
     }
 
     func pasteIntoRememberedAppIfPossible() {
@@ -29,11 +53,13 @@ final class PasteToAppService {
 
         targetApp.activate(options: [])
         Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(150))
+            try? await Task.sleep(for: .milliseconds(140))
             guard let self else { return }
-            focusEditableElementIfNeeded(in: targetApp)
+            let focusedElement = focusEditableElementIfNeeded(in: targetApp)
             try? await Task.sleep(for: .milliseconds(40))
-            postPasteShortcut()
+            if !insertClipboardTextIfPossible(into: focusedElement, for: targetApp) {
+                postPasteShortcut(to: targetApp)
+            }
         }
     }
 
@@ -82,30 +108,74 @@ final class PasteToAppService {
         return false
     }
 
-    private func focusEditableElementIfNeeded(in app: NSRunningApplication) {
+    private func focusEditableElementIfNeeded(in app: NSRunningApplication) -> AXUIElement? {
         let appElement = AXUIElementCreateApplication(app.processIdentifier)
+        let skipDeepTraversal = isBrowserApp(app)
 
-        if let focusedElement = copyElementValue(from: appElement, attribute: kAXFocusedUIElementAttribute as CFString),
-           isEditableElement(focusedElement) {
-            focus(element: focusedElement)
-            return
+        if app.processIdentifier == targetFocusedElementProcessIdentifier,
+           let rememberedFocusedElement = targetFocusedElement {
+            if isEditableElement(rememberedFocusedElement) {
+                focus(element: rememberedFocusedElement)
+                return rememberedFocusedElement
+            }
+
+            if !skipDeepTraversal,
+               let found = findEditableElement(in: rememberedFocusedElement, depth: 0) {
+                focus(element: found)
+                return found
+            }
+        }
+
+        if let focusedElement = copyElementValue(from: appElement, attribute: kAXFocusedUIElementAttribute as CFString) {
+            let deepestFocused = deepestFocusedElement(startingFrom: focusedElement)
+            if isEditableElement(deepestFocused) {
+                focus(element: deepestFocused)
+                return deepestFocused
+            }
+
+            if !skipDeepTraversal,
+               let found = findEditableElement(in: deepestFocused, depth: 0) {
+                focus(element: found)
+                return found
+            }
+        }
+
+        if skipDeepTraversal {
+            return nil
         }
 
         if let focusedWindow = copyElementValue(from: appElement, attribute: kAXFocusedWindowAttribute as CFString),
-           let found = findEditableElement(in: focusedWindow, depth: 0) {
+           let found = findEditableElementPreferringWebArea(in: focusedWindow) {
             focus(element: found)
-            return
+            return found
         }
 
         if let mainWindow = copyElementValue(from: appElement, attribute: kAXMainWindowAttribute as CFString),
-           let found = findEditableElement(in: mainWindow, depth: 0) {
+           let found = findEditableElementPreferringWebArea(in: mainWindow) {
             focus(element: found)
-            return
+            return found
         }
 
         if let found = findEditableElement(in: appElement, depth: 0) {
             focus(element: found)
+            return found
         }
+
+        return nil
+    }
+
+    private func deepestFocusedElement(startingFrom element: AXUIElement) -> AXUIElement {
+        var current = element
+        for _ in 0..<maxSearchDepth {
+            guard let next = copyElementValue(from: current, attribute: kAXFocusedUIElementAttribute as CFString) else {
+                break
+            }
+            if CFEqual(next, current) {
+                break
+            }
+            current = next
+        }
+        return current
     }
 
     private func findEditableElement(in root: AXUIElement, depth: Int) -> AXUIElement? {
@@ -114,16 +184,37 @@ final class PasteToAppService {
             return root
         }
 
-        let childAttributes: [CFString] = [
-            kAXChildrenAttribute as CFString,
-            kAXVisibleChildrenAttribute as CFString,
-            kAXContentsAttribute as CFString
-        ]
-
-        for attribute in childAttributes {
+        for attribute in traversalAttributes {
             let children = copyElementArray(from: root, attribute: attribute)
             for child in children {
                 if let found = findEditableElement(in: child, depth: depth + 1) {
+                    return found
+                }
+            }
+        }
+
+        return nil
+    }
+
+    private func findEditableElementPreferringWebArea(in root: AXUIElement) -> AXUIElement? {
+        if let webArea = findElement(withRole: webAreaRole, in: root, depth: 0),
+           let found = findEditableElement(in: webArea, depth: 0) {
+            return found
+        }
+        return findEditableElement(in: root, depth: 0)
+    }
+
+    private func findElement(withRole role: String, in root: AXUIElement, depth: Int) -> AXUIElement? {
+        guard depth <= maxSearchDepth else { return nil }
+
+        if copyStringValue(from: root, attribute: kAXRoleAttribute as CFString) == role {
+            return root
+        }
+
+        for attribute in traversalAttributes {
+            let children = copyElementArray(from: root, attribute: attribute)
+            for child in children {
+                if let found = findElement(withRole: role, in: child, depth: depth + 1) {
                     return found
                 }
             }
@@ -159,11 +250,45 @@ final class PasteToAppService {
     }
 
     private func focus(element: AXUIElement) {
-        _ = AXUIElementSetAttributeValue(
+        let result = AXUIElementSetAttributeValue(
             element,
             kAXFocusedAttribute as CFString,
             kCFBooleanTrue
         )
+        if result != .success {
+            _ = AXUIElementPerformAction(element, kAXPressAction as CFString)
+        }
+    }
+
+    private func insertClipboardTextIfPossible(into element: AXUIElement?, for app: NSRunningApplication) -> Bool {
+        guard isBrowserApp(app),
+              let element,
+              let text = NSPasteboard.general.string(forType: .string),
+              !text.isEmpty else {
+            return false
+        }
+
+        let result = AXUIElementSetAttributeValue(
+            element,
+            selectedTextAttribute as CFString,
+            text as CFTypeRef
+        )
+        return result == .success
+    }
+
+    private func isBrowserApp(_ app: NSRunningApplication) -> Bool {
+        guard let bundleIdentifier = app.bundleIdentifier else { return false }
+        let browserBundlePrefixes = [
+            "com.apple.Safari",
+            "org.mozilla.firefox",
+            "com.google.Chrome",
+            "com.brave.Browser",
+            "com.microsoft.edgemac",
+            "com.operasoftware.Opera",
+            "com.vivaldi.Vivaldi",
+            "company.thebrowser.Browser"
+        ]
+        return browserBundlePrefixes.contains(where: { bundleIdentifier.hasPrefix($0) })
     }
 
     private func copyElementValue(from element: AXUIElement, attribute: CFString) -> AXUIElement? {
@@ -195,7 +320,7 @@ final class PasteToAppService {
         return value as? Bool
     }
 
-    private func postPasteShortcut() {
+    private func postPasteShortcut(to app: NSRunningApplication) {
         guard let source = CGEventSource(stateID: .hidSystemState),
               let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true),
               let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false) else {
@@ -203,7 +328,7 @@ final class PasteToAppService {
         }
         keyDown.flags = .maskCommand
         keyUp.flags = .maskCommand
-        keyDown.post(tap: .cghidEventTap)
-        keyUp.post(tap: .cghidEventTap)
+        keyDown.postToPid(app.processIdentifier)
+        keyUp.postToPid(app.processIdentifier)
     }
 }
