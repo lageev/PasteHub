@@ -44,7 +44,8 @@ struct ClipboardListView: View {
     let onActivateItem: ((ClipboardItem) -> Void)?
     @State private var searchText = ""
     @State private var selectedFilter: ClipboardFilter = .all
-    @State private var selectedTag: String?
+    @State private var selectedHistoryTag: String?
+    @State private var selectedSnippetTag: String?
     @State private var isSnippetMode = false
     @State private var isSearchExpanded = false
     @FocusState private var isSearchFocused: Bool
@@ -96,17 +97,26 @@ struct ClipboardListView: View {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private var availableTags: [String] {
-        let historyTags = store.items.flatMap(\.tags)
-        let snippetTags = store.snippets.flatMap(\.tags)
-        return Array(Set(historyTags + snippetTags))
+    private var availableHistoryTags: [String] {
+        let tags = store.items.flatMap(\.tags)
+        return Array(Set(tags))
             .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    private var availableSnippetTags: [String] {
+        let tags = store.snippets.flatMap(\.tags)
+        return Array(Set(tags))
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    private var availableTags: [String] {
+        isSnippetMode ? availableSnippetTags : availableHistoryTags
     }
 
     private var filteredItems: [ClipboardItem] {
         return store.items.filter { item in
             selectedFilter.matches(item)
-            && (selectedTag.map { item.tags.contains($0) } ?? true)
+            && (selectedHistoryTag.map { item.tags.contains($0) } ?? true)
             && (
                 queryText.isEmpty
                 || item.displayText.localizedCaseInsensitiveContains(queryText)
@@ -118,7 +128,7 @@ struct ClipboardListView: View {
 
     private var filteredSnippets: [SnippetItem] {
         store.snippets.filter { snippet in
-            (selectedTag.map { snippet.tags.contains($0) } ?? true)
+            (selectedSnippetTag.map { snippet.tags.contains($0) } ?? true)
             && (
                 queryText.isEmpty
                 || snippet.displayTitle.localizedCaseInsensitiveContains(queryText)
@@ -180,9 +190,14 @@ struct ClipboardListView: View {
                 }
             )
         }
-        .onChange(of: availableTags) { _, tags in
-            if let selectedTag, !tags.contains(selectedTag) {
-                self.selectedTag = nil
+        .onChange(of: availableHistoryTags) { _, tags in
+            if let selectedHistoryTag, !tags.contains(selectedHistoryTag) {
+                self.selectedHistoryTag = nil
+            }
+        }
+        .onChange(of: availableSnippetTags) { _, tags in
+            if let selectedSnippetTag, !tags.contains(selectedSnippetTag) {
+                self.selectedSnippetTag = nil
             }
         }
     }
@@ -515,16 +530,21 @@ struct ClipboardListView: View {
     private var tagFilterRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
+                let activeSelectedTag = isSnippetMode ? selectedSnippetTag : selectedHistoryTag
                 Button {
-                    selectedTag = nil
+                    if isSnippetMode {
+                        selectedSnippetTag = nil
+                    } else {
+                        selectedHistoryTag = nil
+                    }
                 } label: {
                     Text("全部标签")
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .foregroundStyle(selectedTag == nil ? .white : .primary)
+                        .foregroundStyle(activeSelectedTag == nil ? .white : .primary)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .background(
-                            selectedTag == nil ? Color.accentColor : Color.secondary.opacity(0.12),
+                            activeSelectedTag == nil ? Color.accentColor : Color.secondary.opacity(0.12),
                             in: Capsule()
                         )
                 }
@@ -532,15 +552,19 @@ struct ClipboardListView: View {
 
                 ForEach(availableTags, id: \.self) { tag in
                     Button {
-                        selectedTag = selectedTag == tag ? nil : tag
+                        if isSnippetMode {
+                            selectedSnippetTag = selectedSnippetTag == tag ? nil : tag
+                        } else {
+                            selectedHistoryTag = selectedHistoryTag == tag ? nil : tag
+                        }
                     } label: {
                         Text("#\(tag)")
                             .font(.system(size: 11, weight: .semibold, design: .rounded))
-                            .foregroundStyle(selectedTag == tag ? .white : .primary)
+                            .foregroundStyle(activeSelectedTag == tag ? .white : .primary)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
                             .background(
-                                selectedTag == tag ? Color.accentColor : Color.secondary.opacity(0.12),
+                                activeSelectedTag == tag ? Color.accentColor : Color.secondary.opacity(0.12),
                                 in: Capsule()
                             )
                     }
