@@ -381,10 +381,6 @@ struct ClipboardListView: View {
             selectedHistoryItemID = nil
             selectedSnippetItemID = nil
             isCommandModifierPressed = false
-            visibleHistoryItemIDs.removeAll()
-            visibleSnippetItemIDs.removeAll()
-            horizontalHistoryViewportRangeX = nil
-            horizontalSnippetViewportRangeX = nil
         }
         .onReceive(NotificationCenter.default.publisher(for: .panelSelectionMove)) { notification in
             guard let directionRaw = notification.userInfo?["direction"] as? String,
