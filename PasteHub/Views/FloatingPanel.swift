@@ -13,6 +13,7 @@ extension Notification.Name {
 final class FloatingPanel: NSPanel, NSWindowDelegate {
     private let settings: SettingsManager
     private var isPresented = false
+    private var isHiding = false
     private static let quickSelectKeys: [Character] = Array("1234567890abcdefghijklmnopqrstuvwxyz")
     var onDidHide: (() -> Void)?
     var statusButtonProvider: (() -> NSStatusBarButton?)?
@@ -174,12 +175,15 @@ final class FloatingPanel: NSPanel, NSWindowDelegate {
     }
 
     private func hide() {
+        guard !isHiding else { return }
+        isHiding = true
         isPresented = false
         NotificationCenter.default.post(name: .panelDidHide, object: nil)
         guard isVisible, let screen = targetScreenForCurrentFrame() else {
             level = .normal
             orderOut(nil)
             onDidHide?()
+            isHiding = false
             return
         }
         let frames = placementFrames(for: settings.panelEdge, on: screen)
@@ -189,6 +193,7 @@ final class FloatingPanel: NSPanel, NSWindowDelegate {
             self.level = .normal
             self.orderOut(nil)
             self.onDidHide?()
+            self.isHiding = false
         }
     }
 

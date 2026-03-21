@@ -18,7 +18,6 @@ final class PasteToAppService {
     private let searchFieldRole = "AXSearchField"
     private let webAreaRole = "AXWebArea"
     private let editableAttribute = "AXEditable"
-    private let selectedTextAttribute = "AXSelectedText"
     private let traversalAttributes: [CFString] = [
         kAXContentsAttribute as CFString,
         kAXVisibleChildrenAttribute as CFString,
@@ -271,19 +270,7 @@ final class PasteToAppService {
     }
 
     private func insertClipboardTextIfPossible(into element: AXUIElement?, for app: NSRunningApplication) -> Bool {
-        guard isBrowserApp(app),
-              let element,
-              let text = NSPasteboard.general.string(forType: .string),
-              !text.isEmpty else {
-            return false
-        }
-
-        let result = AXUIElementSetAttributeValue(
-            element,
-            selectedTextAttribute as CFString,
-            text as CFTypeRef
-        )
-        return result == .success
+        return false
     }
 
     private func isBrowserApp(_ app: NSRunningApplication) -> Bool {
