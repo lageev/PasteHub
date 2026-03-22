@@ -51,6 +51,45 @@ enum CompactPanelSize: String, CaseIterable, Identifiable {
     }
 }
 
+enum CompactDensity: String, CaseIterable, Identifiable {
+    case low
+    case medium
+    case high
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .low: return "低"
+        case .medium: return "中"
+        case .high: return "高"
+        }
+    }
+}
+
+enum CompactPanelPosition: String, CaseIterable, Identifiable {
+    case statusItem
+    case followMouse
+    case screenCenter
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .statusItem: return "状态栏图标处"
+        case .followMouse: return "跟随鼠标指针"
+        case .screenCenter: return "始终屏幕中间"
+        }
+    }
+
+    static func availablePositions(for density: CompactDensity) -> [CompactPanelPosition] {
+        if density == .high {
+            return Self.allCases
+        }
+        return [.statusItem, .screenCenter]
+    }
+}
+
 @MainActor
 @Observable
 final class SettingsManager {
@@ -101,10 +140,41 @@ final class SettingsManager {
         }
     }
 
+    var compactDensity: CompactDensity {
+        didSet {
+            UserDefaults.standard.set(compactDensity.rawValue, forKey: "compactDensity")
+            let normalizedPosition = Self.normalizedCompactPanelPosition(
+                for: compactDensity,
+                requested: compactPanelPosition
+            )
+            if compactPanelPosition != normalizedPosition {
+                compactPanelPosition = normalizedPosition
+            }
+            onCompactDensityChanged?()
+        }
+    }
+
+    var compactPanelPosition: CompactPanelPosition {
+        didSet {
+            let normalizedPosition = Self.normalizedCompactPanelPosition(
+                for: compactDensity,
+                requested: compactPanelPosition
+            )
+            if compactPanelPosition != normalizedPosition {
+                compactPanelPosition = normalizedPosition
+                return
+            }
+            UserDefaults.standard.set(compactPanelPosition.rawValue, forKey: "compactPanelPosition")
+            onCompactPanelPositionChanged?()
+        }
+    }
+
     var onHotkeyChanged: (() -> Void)?
     var onPanelEdgeChanged: (() -> Void)?
     var onCompactModeChanged: (() -> Void)?
     var onCompactPanelSizeChanged: (() -> Void)?
+    var onCompactDensityChanged: (() -> Void)?
+    var onCompactPanelPositionChanged: (() -> Void)?
 
     init() {
         let d = UserDefaults.standard
@@ -151,6 +221,27 @@ final class SettingsManager {
         } else {
             compactPanelSize = .medium
         }
+
+        let initialDensity: CompactDensity
+        if let raw = d.string(forKey: "compactDensity"),
+           let density = CompactDensity(rawValue: raw) {
+            initialDensity = density
+        } else {
+            initialDensity = .low
+        }
+        compactDensity = initialDensity
+
+        let initialPosition: CompactPanelPosition
+        if let raw = d.string(forKey: "compactPanelPosition"),
+           let position = CompactPanelPosition(rawValue: raw) {
+            initialPosition = position
+        } else {
+            initialPosition = .statusItem
+        }
+        compactPanelPosition = Self.normalizedCompactPanelPosition(
+            for: initialDensity,
+            requested: initialPosition
+        )
     }
 
     func setHotkey(keyCode: UInt16, modifiers: UInt) {
@@ -201,5 +292,12 @@ final class SettingsManager {
                 try SMAppService.mainApp.unregister()
             }
         } catch {}
+    }
+
+    private static func normalizedCompactPanelPosition(
+        for density: CompactDensity,
+        requested position: CompactPanelPosition
+    ) -> CompactPanelPosition {
+        CompactPanelPosition.availablePositions(for: density).contains(position) ? position : .statusItem
     }
 }

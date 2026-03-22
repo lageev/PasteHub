@@ -269,6 +269,35 @@ private struct GeneralTab: View {
 
     private let countOptions = [10, 20, 50, 100, 200, 500]
 
+    private var compactPositionOptions: [CompactPanelPosition] {
+        CompactPanelPosition.availablePositions(for: settings.compactDensity)
+    }
+
+    private var isCompactSizeLocked: Bool {
+        settings.compactDensity == .high && settings.compactPanelPosition == .followMouse
+    }
+
+    private var compactPositionSubtitle: String {
+        if settings.compactDensity == .high {
+            return "可在状态栏图标处、鼠标指针附近或屏幕中间呼出。"
+        }
+        return "当前密度仅支持“状态栏图标处”和“屏幕中间”。"
+    }
+
+    private var compactSizeSubtitle: String {
+        if isCompactSizeLocked {
+            return "当前组合固定为 10 条列表高度，面板大小不生效。"
+        }
+        return "小 / 中 / 大分别按屏幕高度的 45% / 60% / 75% 计算。"
+    }
+
+    private var compactModeHint: String {
+        if isCompactSizeLocked {
+            return "已启用快速列表模式：仅显示最近 10 条，适合跟随鼠标快速粘贴。"
+        }
+        return "提示：仅高密度支持“跟随鼠标指针”。"
+    }
+
     var body: some View {
         SettingsPane {
             SettingsCard(
@@ -310,25 +339,8 @@ private struct GeneralTab: View {
             ) {
                 VStack(alignment: .leading, spacing: 14) {
                     SettingsRow(
-                        title: "默认弹出位置",
-                        subtitle: "仅对非精简模式生效。"
-                    ) {
-                        Picker("弹出位置", selection: $settings.panelEdge) {
-                            ForEach(PanelEdge.allCases) { edge in
-                                Text(edge.title).tag(edge)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
-                        .frame(width: 110, alignment: .trailing)
-                        .disabled(settings.compactModeEnabled)
-                    }
-
-                    SettingsSeparator()
-
-                    SettingsRow(
-                        title: "精简模式",
-                        subtitle: "点击状态栏图标时直接弹出紧凑面板。"
+                        title: "紧凑模式",
+                        subtitle: "开启后，单击状态栏图标会直接弹出紧凑面板。"
                     ) {
                         Toggle("", isOn: $settings.compactModeEnabled)
                             .labelsHidden()
@@ -337,19 +349,71 @@ private struct GeneralTab: View {
 
                     SettingsSeparator()
 
-                    SettingsRow(
-                        title: "精简面板大小",
-                        subtitle: "小 / 中 / 大分别按屏幕高度的 45% / 60% / 75% 计算。"
-                    ) {
-                        Picker("精简面板大小", selection: $settings.compactPanelSize) {
-                            ForEach(CompactPanelSize.allCases) { size in
-                                Text(size.title).tag(size)
+                    if settings.compactModeEnabled {
+                        SettingsRow(
+                            title: "密度调节",
+                            subtitle: "低 / 中 / 高。密度越高，列表信息更紧凑。"
+                        ) {
+                            Picker("密度调节", selection: $settings.compactDensity) {
+                                ForEach(CompactDensity.allCases) { density in
+                                    Text(density.title).tag(density)
+                                }
                             }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
+                            .frame(width: 210, alignment: .trailing)
                         }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        .frame(width: 210, alignment: .trailing)
-                        .disabled(!settings.compactModeEnabled)
+
+                        SettingsSeparator()
+
+                        SettingsRow(
+                            title: "紧凑面板位置",
+                            subtitle: compactPositionSubtitle
+                        ) {
+                            Picker("紧凑面板位置", selection: $settings.compactPanelPosition) {
+                                ForEach(compactPositionOptions) { position in
+                                    Text(position.title).tag(position)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .labelsHidden()
+                            .frame(width: 170, alignment: .trailing)
+                        }
+
+                        SettingsSeparator()
+
+                        SettingsRow(
+                            title: "紧凑面板大小",
+                            subtitle: compactSizeSubtitle
+                        ) {
+                            Picker("紧凑面板大小", selection: $settings.compactPanelSize) {
+                                ForEach(CompactPanelSize.allCases) { size in
+                                    Text(size.title).tag(size)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
+                            .frame(width: 210, alignment: .trailing)
+                            .disabled(isCompactSizeLocked)
+                        }
+
+                        SettingsHint(text: compactModeHint)
+                    } else {
+                        SettingsRow(
+                            title: "默认弹出位置",
+                            subtitle: "非紧凑模式下，从这个方向展开主面板。"
+                        ) {
+                            Picker("弹出位置", selection: $settings.panelEdge) {
+                                ForEach(PanelEdge.allCases) { edge in
+                                    Text(edge.title).tag(edge)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .labelsHidden()
+                            .frame(width: 110, alignment: .trailing)
+                        }
+
+                        SettingsHint(text: "可随时开启紧凑模式，改为单击状态栏图标直接呼出。")
                     }
                 }
             }

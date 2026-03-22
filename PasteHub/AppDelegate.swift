@@ -42,6 +42,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.onCompactPanelSizeChanged = { [weak self] in
             self?.panel?.updatePlacementIfVisible()
         }
+        settings.onCompactDensityChanged = { [weak self] in
+            self?.panel?.updatePlacementIfVisible()
+        }
+        settings.onCompactPanelPositionChanged = { [weak self] in
+            self?.panel?.updatePlacementIfVisible()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

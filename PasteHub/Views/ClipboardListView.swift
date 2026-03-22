@@ -77,6 +77,8 @@ struct ClipboardListView: View {
     @State private var visibleSnippetItemIDs: Set<UUID> = []
     @State private var horizontalHistoryViewportRangeX: ClosedRange<CGFloat>?
     @State private var horizontalSnippetViewportRangeX: ClosedRange<CGFloat>?
+    @State private var localKeyDownMonitor: Any?
+    @State private var localFlagsChangedMonitor: Any?
 
     init(
         store: ClipboardStore,
@@ -99,7 +101,7 @@ struct ClipboardListView: View {
     }
 
     private var isHistoryWaterfallLayout: Bool {
-        !isSnippetMode && !useHorizontalWaterfall
+        !isSnippetMode && !useHorizontalWaterfall && !(isCompactMode && usesCompactLinearList)
     }
 
     private var chromeMaxWidth: CGFloat {
@@ -121,9 +123,89 @@ struct ClipboardListView: View {
     private let horizontalScrollerGap: CGFloat = 8
     private let panelCornerRadius: CGFloat = 18
     private let compactPanelWidth: CGFloat = CompactPanelLayout.width
-    private let compactGridSpacing: CGFloat = 8
-    private let compactColumnWidth: CGFloat = 172
-    private let compactImageCardSize: CGFloat = 172
+    private var compactDensity: CompactDensity {
+        settings.compactDensity
+    }
+
+    private var compactGridSpacing: CGFloat {
+        switch compactDensity {
+        case .low: return 8
+        case .medium: return 7
+        case .high: return 6
+        }
+    }
+
+    private var compactColumnWidth: CGFloat {
+        switch compactDensity {
+        case .low: return 172
+        case .medium: return 168
+        case .high: return 162
+        }
+    }
+
+    private var compactImageCardSize: CGFloat {
+        switch compactDensity {
+        case .low: return 172
+        case .medium: return 154
+        case .high: return 138
+        }
+    }
+
+    private var compactBodySpacing: CGFloat {
+        switch compactDensity {
+        case .low: return 12
+        case .medium: return 10
+        case .high: return 8
+        }
+    }
+
+    private var compactHeaderSpacing: CGFloat {
+        switch compactDensity {
+        case .low: return 10
+        case .medium: return 8
+        case .high: return 6
+        }
+    }
+
+    private var compactPanelHorizontalPadding: CGFloat {
+        switch compactDensity {
+        case .low: return 14
+        case .medium: return 12
+        case .high: return 10
+        }
+    }
+
+    private var compactPanelVerticalPadding: CGFloat {
+        switch compactDensity {
+        case .low: return 14
+        case .medium: return 12
+        case .high: return 10
+        }
+    }
+
+    private var compactControlFontSize: CGFloat {
+        switch compactDensity {
+        case .low: return 10
+        case .medium: return 9.5
+        case .high: return 9
+        }
+    }
+
+    private var compactSearchFieldWidth: CGFloat {
+        switch compactDensity {
+        case .low: return 142
+        case .medium: return 132
+        case .high: return 122
+        }
+    }
+
+    private var compactSearchIconSide: CGFloat {
+        switch compactDensity {
+        case .low: return 30
+        case .medium: return 28
+        case .high: return 26
+        }
+    }
     private static let quickShortcutKeys: [String] = {
         let digits = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
         let letters = (0..<26).compactMap { index in
@@ -131,7 +213,28 @@ struct ClipboardListView: View {
         }
         return digits + letters
     }()
-    private var compactSnippetCardWidth: CGFloat { compactPanelWidth - 28 }
+    private var compactSnippetCardWidth: CGFloat { compactPanelWidth - compactPanelHorizontalPadding * 2 }
+    private var usesCompactLinearList: Bool { compactDensity != .low }
+    private var isHighDensityPointerCompactMode: Bool {
+        isCompactMode
+        && compactDensity == .high
+        && settings.compactPanelPosition == .followMouse
+    }
+    private let highDensityPointerPageLimit = CompactPanelLayout.highDensityPointerRowsPerPage
+
+    private var compactDisplayedHistoryItems: [ClipboardItem] {
+        if isHighDensityPointerCompactMode {
+            return Array(filteredItems.prefix(highDensityPointerPageLimit))
+        }
+        return filteredItems
+    }
+
+    private var compactDisplayedSnippets: [SnippetItem] {
+        if isHighDensityPointerCompactMode {
+            return Array(filteredSnippets.prefix(highDensityPointerPageLimit))
+        }
+        return filteredSnippets
+    }
 
     private var horizontalHistoryContentHeight: CGFloat {
         horizontalCardHeight + horizontalScrollerGap + 8
@@ -223,16 +326,30 @@ struct ClipboardListView: View {
     }
 
     private var quickSelectableHistoryItems: [ClipboardItem] {
-        let sourceItems = useHorizontalWaterfall
-            ? horizontalVisibleHistoryItems
-            : (visibleHistoryItems.isEmpty ? filteredItems : visibleHistoryItems)
+        let sourceItems: [ClipboardItem]
+        if useHorizontalWaterfall {
+            sourceItems = horizontalVisibleHistoryItems
+        } else if isHighDensityPointerCompactMode {
+            sourceItems = compactDisplayedHistoryItems
+        } else if isCompactMode && usesCompactLinearList {
+            sourceItems = filteredItems
+        } else {
+            sourceItems = visibleHistoryItems.isEmpty ? filteredItems : visibleHistoryItems
+        }
         return Array(sourceItems.prefix(quickShortcutCapacity))
     }
 
     private var quickSelectableSnippets: [SnippetItem] {
-        let sourceSnippets = useHorizontalWaterfall
-            ? horizontalVisibleSnippetItems
-            : (visibleSnippetItems.isEmpty ? filteredSnippets : visibleSnippetItems)
+        let sourceSnippets: [SnippetItem]
+        if useHorizontalWaterfall {
+            sourceSnippets = horizontalVisibleSnippetItems
+        } else if isHighDensityPointerCompactMode {
+            sourceSnippets = compactDisplayedSnippets
+        } else if isCompactMode && usesCompactLinearList {
+            sourceSnippets = filteredSnippets
+        } else {
+            sourceSnippets = visibleSnippetItems.isEmpty ? filteredSnippets : visibleSnippetItems
+        }
         return Array(sourceSnippets.prefix(quickShortcutCapacity))
     }
 
@@ -240,12 +357,24 @@ struct ClipboardListView: View {
         if useHorizontalWaterfall {
             return horizontalVisibleHistoryItems.first?.id
         }
+        if isHighDensityPointerCompactMode {
+            return compactDisplayedHistoryItems.first?.id
+        }
+        if isCompactMode && usesCompactLinearList {
+            return filteredItems.first?.id
+        }
         return (visibleHistoryItems.isEmpty ? filteredItems : visibleHistoryItems).first?.id
     }
 
     private var firstVisibleSnippetItemID: UUID? {
         if useHorizontalWaterfall {
             return horizontalVisibleSnippetItems.first?.id
+        }
+        if isHighDensityPointerCompactMode {
+            return compactDisplayedSnippets.first?.id
+        }
+        if isCompactMode && usesCompactLinearList {
+            return filteredSnippets.first?.id
         }
         return (visibleSnippetItems.isEmpty ? filteredSnippets : visibleSnippetItems).first?.id
     }
@@ -366,6 +495,16 @@ struct ClipboardListView: View {
                 isSearchExpanded = false
             }
         }
+        .onChange(of: isHighDensityPointerCompactMode) { _, isEnabled in
+            if isEnabled {
+                isSnippetMode = false
+                selectedFilter = .all
+                selectedHistoryTag = nil
+                selectedSnippetTag = nil
+                selectedHistoryItemID = nil
+                selectedSnippetItemID = nil
+            }
+        }
         .onChange(of: filteredItems.map(\.id)) { _, _ in
             syncSelectionIfNeeded()
             syncVisibleItemsIfNeeded()
@@ -411,6 +550,12 @@ struct ClipboardListView: View {
                 focusSearchFieldForTyping()
             }
         }
+        .onAppear {
+            installLocalKeyboardBridgingIfNeeded()
+        }
+        .onDisappear {
+            removeLocalKeyboardBridging()
+        }
     }
 
     private var regularModeBody: some View {
@@ -433,12 +578,17 @@ struct ClipboardListView: View {
             ZStack {
                 panelBackground
 
-                VStack(spacing: 12) {
-                    compactHeader
+                VStack(spacing: compactBodySpacing) {
+                    if !isHighDensityPointerCompactMode {
+                        compactHeader
+                    }
+                    if isHighDensityPointerCompactMode && (isSearchExpanded || !searchText.isEmpty) {
+                        compactInlineSearchControl
+                    }
                     compactContentArea
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 14)
+                .padding(.horizontal, compactPanelHorizontalPadding)
+                .padding(.vertical, compactPanelVerticalPadding)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
             .contentShape(Rectangle())
@@ -458,7 +608,7 @@ struct ClipboardListView: View {
     }
 
     private var compactHeader: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: compactHeaderSpacing) {
             HStack(spacing: 8) {
                 compactModeTabs
                 compactHeaderActions
@@ -473,7 +623,7 @@ struct ClipboardListView: View {
     }
 
     private var compactModeTabs: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: compactDensity == .high ? 4 : 6) {
             compactModeTab(
                 title: "历史",
                 systemImage: "clock.arrow.circlepath",
@@ -497,13 +647,13 @@ struct ClipboardListView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(4)
+        .padding(compactDensity == .low ? 4 : 3)
         .background(
             Color(nsColor: .controlBackgroundColor).opacity(0.82),
-            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            in: RoundedRectangle(cornerRadius: compactDensity == .high ? 12 : 14, style: .continuous)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: compactDensity == .high ? 12 : 14, style: .continuous)
                 .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
         )
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -540,7 +690,7 @@ struct ClipboardListView: View {
 
     private var compactHistoryList: some View {
         Group {
-            if filteredItems.isEmpty {
+            if compactDisplayedHistoryItems.isEmpty {
                 EmptyStateCard(
                     icon: "list.bullet.rectangle",
                     title: "暂无记录",
@@ -549,14 +699,18 @@ struct ClipboardListView: View {
                         : "没有匹配当前搜索条件的结果"
                 )
             } else {
-                compactWaterfallContent
+                if usesCompactLinearList {
+                    compactLinearHistoryContent
+                } else {
+                    compactWaterfallContent
+                }
             }
         }
     }
 
     private var compactSnippetList: some View {
         Group {
-            if filteredSnippets.isEmpty {
+            if compactDisplayedSnippets.isEmpty {
                 EmptyStateCard(
                     icon: "bookmark",
                     title: "暂无常用片段",
@@ -565,21 +719,28 @@ struct ClipboardListView: View {
                         : "没有匹配当前搜索条件的片段"
                 )
             } else {
-                compactSnippetContent
+                if usesCompactLinearList {
+                    compactLinearSnippetContent
+                } else {
+                    compactSnippetContent
+                }
             }
         }
     }
 
     private var compactSearchControl: some View {
         Group {
+            if isHighDensityPointerCompactMode && !isSearchExpanded && searchText.isEmpty {
+                EmptyView()
+            } else
             if isSearchExpanded || !searchText.isEmpty {
-                HStack(spacing: 6) {
+                HStack(spacing: compactDensity == .high ? 4 : 6) {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(.secondary)
 
                     TextField("搜索", text: $searchText)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .font(.system(size: compactDensity == .high ? 11 : 12, weight: .medium, design: .rounded))
                         .focused($isSearchFocused)
 
                     Button {
@@ -597,15 +758,15 @@ struct ClipboardListView: View {
                     }
                     .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .frame(width: 142)
+                .padding(.horizontal, compactDensity == .high ? 8 : 10)
+                .padding(.vertical, compactDensity == .low ? 7 : 6)
+                .frame(width: compactSearchFieldWidth)
                 .background(
                     Color(nsColor: .controlBackgroundColor).opacity(0.82),
-                    in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    in: RoundedRectangle(cornerRadius: compactDensity == .low ? 11 : 10, style: .continuous)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    RoundedRectangle(cornerRadius: compactDensity == .low ? 11 : 10, style: .continuous)
                         .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
                 )
             } else {
@@ -619,13 +780,13 @@ struct ClipboardListView: View {
                 } label: {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(.secondary)
-                        .frame(width: 30, height: 30)
+                        .frame(width: compactSearchIconSide, height: compactSearchIconSide)
                         .background(
                             Color(nsColor: .controlBackgroundColor).opacity(0.82),
-                            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            in: RoundedRectangle(cornerRadius: compactDensity == .high ? 9 : 10, style: .continuous)
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            RoundedRectangle(cornerRadius: compactDensity == .high ? 9 : 10, style: .continuous)
                                 .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
                         )
                 }
@@ -635,18 +796,57 @@ struct ClipboardListView: View {
         .animation(.easeInOut(duration: 0.16), value: isSearchExpanded)
     }
 
+    private var compactInlineSearchControl: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+
+            TextField("搜索", text: $searchText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .focused($isSearchFocused)
+
+            Button {
+                if !searchText.isEmpty {
+                    searchText = ""
+                } else {
+                    withAnimation(.easeInOut(duration: 0.14)) {
+                        isSearchExpanded = false
+                    }
+                    isSearchFocused = false
+                }
+            } label: {
+                Image(systemName: searchText.isEmpty ? "chevron.left.circle.fill" : "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            Color(nsColor: .controlBackgroundColor).opacity(0.82),
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
+        )
+        .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+
     private var compactHistoryFilterRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
+            HStack(spacing: compactDensity == .high ? 4 : 6) {
                 ForEach(ClipboardFilter.allCases) { filter in
                     Button {
                         selectedFilter = filter
                     } label: {
                         Text(filter.title)
-                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .font(.system(size: compactControlFontSize, weight: .semibold, design: .rounded))
                             .foregroundStyle(selectedFilter == filter ? .white : .primary)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 5)
+                            .padding(.horizontal, compactDensity == .high ? 8 : 9)
+                            .padding(.vertical, compactDensity == .low ? 5 : 4)
                             .background(
                                 selectedFilter == filter ? Color.accentColor : Color.secondary.opacity(0.12),
                                 in: Capsule()
@@ -666,7 +866,7 @@ struct ClipboardListView: View {
                 EmptyView()
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: compactDensity == .high ? 4 : 6) {
                         Button {
                             if isSnippetMode {
                                 selectedSnippetTag = nil
@@ -675,10 +875,10 @@ struct ClipboardListView: View {
                             }
                         } label: {
                             Text("全部")
-                                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                .font(.system(size: compactControlFontSize, weight: .semibold, design: .rounded))
                                 .foregroundStyle(compactSelectedTag == nil ? .white : .primary)
-                                .padding(.horizontal, 9)
-                                .padding(.vertical, 5)
+                                .padding(.horizontal, compactDensity == .high ? 8 : 9)
+                                .padding(.vertical, compactDensity == .low ? 5 : 4)
                                 .background(
                                     compactSelectedTag == nil ? Color.accentColor : Color.secondary.opacity(0.12),
                                     in: Capsule()
@@ -695,10 +895,10 @@ struct ClipboardListView: View {
                                 }
                             } label: {
                                 Text("#\(tag)")
-                                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                    .font(.system(size: compactControlFontSize, weight: .semibold, design: .rounded))
                                     .foregroundStyle(compactSelectedTag == tag ? .white : .primary)
-                                    .padding(.horizontal, 9)
-                                    .padding(.vertical, 5)
+                                    .padding(.horizontal, compactDensity == .high ? 8 : 9)
+                                    .padding(.vertical, compactDensity == .low ? 5 : 4)
                                     .background(
                                         compactSelectedTag == tag ? Color.accentColor : Color.secondary.opacity(0.12),
                                         in: Capsule()
@@ -729,6 +929,7 @@ struct ClipboardListView: View {
                                     item: item,
                                     cardWidth: compactColumnWidth,
                                     imageCardSize: compactImageCardSize,
+                                    density: compactDensity,
                                     onPrimaryAction: {
                                         selectedHistoryItemID = item.id
                                         activateClipboardItem(item)
@@ -788,6 +989,7 @@ struct ClipboardListView: View {
                             onDelete: { store.removeSnippet(snippet) },
                             preferredWidth: compactSnippetCardWidth,
                             compactStyle: true,
+                            compactDensity: compactDensity,
                             isSelected: selectedSnippetItemID == snippet.id,
                             quickShortcutLabel: snippetQuickLabelsByID[snippet.id]
                         )
@@ -801,6 +1003,102 @@ struct ClipboardListView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 2)
+                .background(
+                    ScrollWheelInterventionObserver {
+                        if selectedSnippetItemID != nil {
+                            selectedSnippetItemID = nil
+                        }
+                    }
+                    .frame(width: 0, height: 0)
+                )
+            }
+            .onChange(of: selectedSnippetItemID) { _, selectedID in
+                guard let selectedID else { return }
+                withAnimation(.easeInOut(duration: 0.14)) {
+                    proxy.scrollTo(selectedID, anchor: .center)
+                }
+            }
+        }
+    }
+
+    private var compactLinearHistoryContent: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(spacing: compactDensity == .high ? 3 : 4) {
+                    ForEach(compactDisplayedHistoryItems) { item in
+                        CompactLinearHistoryRow(
+                            item: item,
+                            density: compactDensity,
+                            isSelected: selectedHistoryItemID == item.id,
+                            quickShortcutLabel: historyQuickLabelsByID[item.id],
+                            onPrimaryAction: {
+                                selectedHistoryItemID = item.id
+                                activateClipboardItem(item)
+                            },
+                            onCopy: { store.copyToClipboard(item) },
+                            onDelete: { store.remove(item) },
+                            onManageTags: { tagEditorItem = item },
+                            onSaveAsSnippet: { quickSaveAsSnippet(item) },
+                            onTokenSelect: { tokenSelectionItem = item }
+                        )
+                        .id(item.id)
+                        .onAppear {
+                            trackHistoryVisibility(item.id, isVisible: true)
+                        }
+                        .onDisappear {
+                            trackHistoryVisibility(item.id, isVisible: false)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 1)
+                .background(
+                    ScrollWheelInterventionObserver {
+                        if selectedHistoryItemID != nil {
+                            selectedHistoryItemID = nil
+                        }
+                    }
+                    .frame(width: 0, height: 0)
+                )
+            }
+            .onChange(of: selectedHistoryItemID) { _, selectedID in
+                guard let selectedID else { return }
+                withAnimation(.easeInOut(duration: 0.14)) {
+                    proxy.scrollTo(selectedID, anchor: .center)
+                }
+            }
+        }
+    }
+
+    private var compactLinearSnippetContent: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(spacing: compactDensity == .high ? 3 : 4) {
+                    ForEach(compactDisplayedSnippets) { snippet in
+                        CompactLinearSnippetRow(
+                            snippet: snippet,
+                            density: compactDensity,
+                            isSelected: selectedSnippetItemID == snippet.id,
+                            quickShortcutLabel: snippetQuickLabelsByID[snippet.id],
+                            onPrimaryAction: {
+                                selectedSnippetItemID = snippet.id
+                                activateSnippet(snippet)
+                            },
+                            onCopy: { store.copySnippetToClipboard(snippet) },
+                            onEdit: { beginEditSnippet(snippet) },
+                            onDelete: { store.removeSnippet(snippet) }
+                        )
+                        .id(snippet.id)
+                        .onAppear {
+                            trackSnippetVisibility(snippet.id, isVisible: true)
+                        }
+                        .onDisappear {
+                            trackSnippetVisibility(snippet.id, isVisible: false)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 1)
                 .background(
                     ScrollWheelInterventionObserver {
                         if selectedSnippetItemID != nil {
@@ -1215,12 +1513,30 @@ struct ClipboardListView: View {
         case .image:
             return compactImageCardSize
         case .file:
-            return item.isImageLikeItem ? compactImageCardSize : 110
+            if item.isImageLikeItem {
+                return compactImageCardSize
+            }
+            switch compactDensity {
+            case .low: return 110
+            case .medium: return 100
+            case .high: return 90
+            }
         case .text:
             let len = item.displayText.count
-            if len > 120 { return 160 }
-            if len > 60 { return 136 }
-            return 112
+            switch compactDensity {
+            case .low:
+                if len > 120 { return 160 }
+                if len > 60 { return 136 }
+                return 112
+            case .medium:
+                if len > 120 { return 142 }
+                if len > 60 { return 124 }
+                return 102
+            case .high:
+                if len > 120 { return 128 }
+                if len > 60 { return 112 }
+                return 92
+            }
         }
     }
 
@@ -1379,30 +1695,30 @@ struct ClipboardListView: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            HStack(spacing: 6) {
+            HStack(spacing: compactDensity == .high ? 4 : 6) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: compactDensity == .high ? 10 : 11, weight: .semibold))
 
                 Text(title)
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .font(.system(size: compactDensity == .high ? 10 : 11, weight: .semibold, design: .rounded))
                     .lineLimit(1)
 
                 Text("\(count)")
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
+                    .font(.system(size: compactDensity == .high ? 9 : 10, weight: .bold, design: .rounded))
+                    .padding(.horizontal, compactDensity == .high ? 5 : 6)
+                    .padding(.vertical, compactDensity == .high ? 1.5 : 2)
                     .background(
                         isActive ? Color.white.opacity(0.18) : Color.secondary.opacity(0.12),
                         in: Capsule()
                     )
             }
             .foregroundStyle(isActive ? .white : .primary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity, minHeight: 34)
+            .padding(.horizontal, compactDensity == .high ? 8 : 10)
+            .padding(.vertical, compactDensity == .low ? 8 : 6)
+            .frame(maxWidth: .infinity, minHeight: compactDensity == .low ? 34 : 30)
             .background(
                 isActive ? Color.accentColor : Color.clear,
-                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                in: RoundedRectangle(cornerRadius: compactDensity == .high ? 8 : 10, style: .continuous)
             )
             .contentShape(Rectangle())
         }
@@ -1474,7 +1790,8 @@ struct ClipboardListView: View {
 
     private func moveSelection(direction: SelectionDirection) {
         if isSnippetMode {
-            let ids = filteredSnippets.map(\.id)
+            let sourceSnippets = isHighDensityPointerCompactMode ? compactDisplayedSnippets : filteredSnippets
+            let ids = sourceSnippets.map(\.id)
             let currentID = selectedSnippetItemID
 
             if useHorizontalWaterfall, let currentID {
@@ -1499,7 +1816,8 @@ struct ClipboardListView: View {
             return
         }
 
-        let ids = filteredItems.map(\.id)
+        let sourceItems = isHighDensityPointerCompactMode ? compactDisplayedHistoryItems : filteredItems
+        let ids = sourceItems.map(\.id)
         let currentID = selectedHistoryItemID
 
         if useHorizontalWaterfall, let currentID {
@@ -1558,16 +1876,18 @@ struct ClipboardListView: View {
 
     private func activateSelectedItem() {
         if isSnippetMode {
+            let sourceSnippets = isHighDensityPointerCompactMode ? compactDisplayedSnippets : filteredSnippets
             guard let selectedSnippetItemID,
-                  let snippet = filteredSnippets.first(where: { $0.id == selectedSnippetItemID }) else {
+                  let snippet = sourceSnippets.first(where: { $0.id == selectedSnippetItemID }) else {
                 return
             }
             activateSnippet(snippet)
             return
         }
 
+        let sourceItems = isHighDensityPointerCompactMode ? compactDisplayedHistoryItems : filteredItems
         guard let selectedHistoryItemID,
-              let item = filteredItems.first(where: { $0.id == selectedHistoryItemID }) else {
+              let item = sourceItems.first(where: { $0.id == selectedHistoryItemID }) else {
             return
         }
         activateClipboardItem(item)
@@ -1589,6 +1909,101 @@ struct ClipboardListView: View {
         let item = quickItems[index]
         selectedHistoryItemID = item.id
         activateClipboardItem(item)
+    }
+
+    private var shouldBridgeSearchFocusedKeys: Bool {
+        isHighDensityPointerCompactMode
+        && isSearchFocused
+        && (NSApp.keyWindow is FloatingPanel)
+    }
+
+    private var isSearchInputComposing: Bool {
+        guard let textView = NSApp.keyWindow?.firstResponder as? NSTextView else { return false }
+        return textView.hasMarkedText()
+    }
+
+    private func installLocalKeyboardBridgingIfNeeded() {
+        if localKeyDownMonitor == nil {
+            localKeyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                guard shouldBridgeSearchFocusedKeys else { return event }
+                guard !isSearchInputComposing else { return event }
+
+                let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                if modifiers.contains(.command), let quickIndex = quickSelectIndex(from: event) {
+                    NotificationCenter.default.post(
+                        name: .panelQuickSelect,
+                        object: nil,
+                        userInfo: ["index": quickIndex]
+                    )
+                    return nil
+                }
+
+                if modifiers.intersection([.command, .control, .option]).isEmpty {
+                    if let direction = selectionDirectionRaw(for: event.keyCode) {
+                        // 方向键进入结果导航时让搜索框失焦，后续回车由列表处理。
+                        isSearchFocused = false
+                        NotificationCenter.default.post(
+                            name: .panelSelectionMove,
+                            object: nil,
+                            userInfo: ["direction": direction]
+                        )
+                        return nil
+                    }
+                }
+
+                return event
+            }
+        }
+
+        if localFlagsChangedMonitor == nil {
+            localFlagsChangedMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
+                guard shouldBridgeSearchFocusedKeys else { return event }
+                guard !isSearchInputComposing else { return event }
+
+                let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                NotificationCenter.default.post(
+                    name: .panelCommandModifierChanged,
+                    object: nil,
+                    userInfo: ["isPressed": modifiers.contains(.command)]
+                )
+                return event
+            }
+        }
+    }
+
+    private func removeLocalKeyboardBridging() {
+        if let localKeyDownMonitor {
+            NSEvent.removeMonitor(localKeyDownMonitor)
+            self.localKeyDownMonitor = nil
+        }
+
+        if let localFlagsChangedMonitor {
+            NSEvent.removeMonitor(localFlagsChangedMonitor)
+            self.localFlagsChangedMonitor = nil
+        }
+    }
+
+    private func selectionDirectionRaw(for keyCode: UInt16) -> String? {
+        switch keyCode {
+        case 123:
+            return "left"
+        case 124:
+            return "right"
+        case 125:
+            return "down"
+        case 126:
+            return "up"
+        default:
+            return nil
+        }
+    }
+
+    private func quickSelectIndex(from event: NSEvent) -> Int? {
+        guard let chars = event.charactersIgnoringModifiers?.lowercased(),
+              chars.count == 1 else {
+            return nil
+        }
+        return Self.quickShortcutKeys.firstIndex(where: { $0.lowercased() == chars })
     }
 
     private func beginAddSnippet() {
@@ -1657,10 +2072,228 @@ struct ClipboardListView: View {
     }
 }
 
+private struct CompactLinearHistoryRow: View {
+    let item: ClipboardItem
+    let density: CompactDensity
+    let isSelected: Bool
+    let quickShortcutLabel: String?
+    let onPrimaryAction: () -> Void
+    let onCopy: () -> Void
+    let onDelete: () -> Void
+    let onManageTags: () -> Void
+    let onSaveAsSnippet: () -> Void
+    let onTokenSelect: () -> Void
+
+    private var previewImage: NSImage? {
+        guard item.isImageLikeItem, let url = item.contentURL else { return nil }
+        let key = url as NSURL
+        if let cached = ImagePreviewCache.shared.object(forKey: key) {
+            return cached
+        }
+        guard let image = NSImage(contentsOf: url) else { return nil }
+        ImagePreviewCache.shared.setObject(image, forKey: key)
+        return image
+    }
+
+    private var rowHorizontalPadding: CGFloat {
+        density == .high ? 4 : 6
+    }
+
+    private var rowVerticalPadding: CGFloat {
+        density == .high ? 3 : 5
+    }
+
+    private var titleFontSize: CGFloat {
+        density == .high ? 12 : 12.5
+    }
+
+    private var metaFontSize: CGFloat {
+        density == .high ? 9 : 10
+    }
+
+    private var typeLabel: String {
+        item.isImageLikeItem ? ClipboardContentType.image.label : item.type.label
+    }
+
+    private var titleText: String {
+        item.displayText
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var metaText: String {
+        var parts = [typeLabel]
+        if let app = item.sourceApp?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !app.isEmpty {
+            parts.append(app)
+        }
+        parts.append(ClipboardTimeFormatter.shared.string(from: item.timestamp))
+        return parts.joined(separator: " · ")
+    }
+
+    @ViewBuilder
+    private var logo: some View {
+        if item.isImageLikeItem, let previewImage {
+            Image(nsImage: previewImage)
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 14, height: 14)
+                .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+        } else {
+            Image(systemName: item.isImageLikeItem ? ClipboardContentType.image.icon : item.type.icon)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 14, height: 14)
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: density == .high ? 6 : 8) {
+            logo
+
+            VStack(alignment: .leading, spacing: density == .high ? 0 : 2) {
+                Text(titleText.isEmpty ? "空内容" : titleText)
+                    .font(.system(size: titleFontSize, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                if density == .medium {
+                    Text(metaText)
+                        .font(.system(size: metaFontSize, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            if let quickShortcutLabel {
+                Text(quickShortcutLabel)
+                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(Color.secondary.opacity(0.12), in: Capsule())
+            }
+        }
+        .padding(.horizontal, rowHorizontalPadding)
+        .padding(.vertical, rowVerticalPadding)
+        .frame(maxWidth: .infinity, minHeight: density == .high ? 24 : 34, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: density == .high ? 7 : 9, style: .continuous)
+                .fill(isSelected ? Color.accentColor.opacity(0.14) : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: density == .high ? 7 : 9, style: .continuous)
+                .stroke(isSelected ? Color.accentColor.opacity(0.9) : Color.clear, lineWidth: 1)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onPrimaryAction)
+        .contextMenu {
+            Button("完成键入", action: onPrimaryAction)
+            Button("重新复制", action: onCopy)
+            Button("编辑标签", action: onManageTags)
+            if item.type == .text {
+                Button("分词选择", action: onTokenSelect)
+                Button("添加到常用片段", action: onSaveAsSnippet)
+            }
+            Divider()
+            Button("删除", role: .destructive, action: onDelete)
+        }
+    }
+}
+
+private struct CompactLinearSnippetRow: View {
+    let snippet: SnippetItem
+    let density: CompactDensity
+    let isSelected: Bool
+    let quickShortcutLabel: String?
+    let onPrimaryAction: () -> Void
+    let onCopy: () -> Void
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+
+    private var rowHorizontalPadding: CGFloat {
+        density == .high ? 4 : 6
+    }
+
+    private var rowVerticalPadding: CGFloat {
+        density == .high ? 3 : 5
+    }
+
+    private var titleFontSize: CGFloat {
+        density == .high ? 12 : 12.5
+    }
+
+    private var metaFontSize: CGFloat {
+        density == .high ? 9 : 10
+    }
+
+    private var metaText: String {
+        "片段 · \(ClipboardTimeFormatter.shared.string(from: snippet.timestamp))"
+    }
+
+    var body: some View {
+        HStack(spacing: density == .high ? 6 : 8) {
+            Image(systemName: "bookmark.fill")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 14, height: 14)
+
+            VStack(alignment: .leading, spacing: density == .high ? 0 : 2) {
+                Text(snippet.displayTitle)
+                    .font(.system(size: titleFontSize, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                if density == .medium {
+                    Text(metaText)
+                        .font(.system(size: metaFontSize, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            if let quickShortcutLabel {
+                Text(quickShortcutLabel)
+                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(Color.secondary.opacity(0.12), in: Capsule())
+            }
+        }
+        .padding(.horizontal, rowHorizontalPadding)
+        .padding(.vertical, rowVerticalPadding)
+        .frame(maxWidth: .infinity, minHeight: density == .high ? 24 : 34, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: density == .high ? 7 : 9, style: .continuous)
+                .fill(isSelected ? Color.accentColor.opacity(0.14) : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: density == .high ? 7 : 9, style: .continuous)
+                .stroke(isSelected ? Color.accentColor.opacity(0.9) : Color.clear, lineWidth: 1)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onPrimaryAction)
+        .contextMenu {
+            Button("完成键入", action: onPrimaryAction)
+            Button("重新复制", action: onCopy)
+            Button("编辑片段", action: onEdit)
+            Divider()
+            Button("删除", role: .destructive, action: onDelete)
+        }
+    }
+}
+
 private struct CompactClipboardCard: View {
     let item: ClipboardItem
     let cardWidth: CGFloat
     let imageCardSize: CGFloat
+    let density: CompactDensity
     let onPrimaryAction: () -> Void
     let onCopy: () -> Void
     let onDelete: () -> Void
@@ -1721,6 +2354,41 @@ private struct CompactClipboardCard: View {
 
     private var isImageCard: Bool {
         item.isImageLikeItem
+    }
+
+    private var textLineLimit: Int {
+        switch density {
+        case .low: return item.type == .text ? 5 : 3
+        case .medium: return item.type == .text ? 4 : 2
+        case .high: return item.type == .text ? 3 : 2
+        }
+    }
+
+    private var cardPadding: CGFloat {
+        switch density {
+        case .low: return 10
+        case .medium: return 9
+        case .high: return 8
+        }
+    }
+
+    private var titleFontSize: CGFloat {
+        switch density {
+        case .low: return 13
+        case .medium: return 12
+        case .high: return 11
+        }
+    }
+
+    private var helperFontSize: CGFloat {
+        switch density {
+        case .low, .medium: return 10
+        case .high: return 9
+        }
+    }
+
+    private var shouldShowHoverHint: Bool {
+        density != .high
     }
 
     var body: some View {
@@ -1836,26 +2504,26 @@ private struct CompactClipboardCard: View {
                 compactMetaRow(foreground: accent, secondary: .secondary)
 
                 Text(item.displayText)
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .font(.system(size: titleFontSize, weight: .semibold, design: .rounded))
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.leading)
-                    .lineLimit(item.type == .text ? 5 : 3)
+                    .lineLimit(textLineLimit)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 compactFooterRow(foreground: .secondary)
 
-                if isHovering {
+                if isHovering && shouldShowHoverHint {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.up.left.and.arrow.down.right")
                         Text("单击回填，右键更多")
                             .lineLimit(1)
                     }
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .font(.system(size: helperFontSize, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
             }
-            .padding(10)
+            .padding(cardPadding)
             .frame(width: cardWidth, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -1872,7 +2540,7 @@ private struct CompactClipboardCard: View {
     private func compactMetaRow(foreground: Color, secondary: Color) -> some View {
         HStack(spacing: 4) {
             Image(systemName: item.isImageLikeItem ? ClipboardContentType.image.icon : item.type.icon)
-                .font(.system(size: 10, weight: .bold))
+                .font(.system(size: helperFontSize, weight: .bold))
                 .foregroundStyle(foreground)
                 .frame(width: 16, height: 16)
                 .background(foreground.opacity(0.16), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
@@ -1882,7 +2550,7 @@ private struct CompactClipboardCard: View {
                 .foregroundStyle(secondary)
             Spacer(minLength: 0)
         }
-        .font(.system(size: 10, weight: .semibold, design: .rounded))
+        .font(.system(size: helperFontSize, weight: .semibold, design: .rounded))
         .lineLimit(1)
     }
 
@@ -1909,7 +2577,7 @@ private struct CompactClipboardCard: View {
 
             Spacer(minLength: 0)
         }
-        .font(.system(size: 10, weight: .medium, design: .rounded))
+        .font(.system(size: helperFontSize, weight: .medium, design: .rounded))
         .foregroundStyle(foreground)
     }
 }
@@ -2322,7 +2990,7 @@ private struct ClipboardCard: View {
         return nil
     }
 
-    /// 与精简模式大图卡片一致：含顶/底边横向列表（`compactStyle == true`）时的图片项。
+    /// 与紧凑模式大图卡片一致：含顶/底边横向列表（`compactStyle == true`）时的图片项。
     private var usesFullBleedImageLayout: Bool {
         item.isImageLikeItem
     }
@@ -2618,6 +3286,7 @@ private struct SnippetCard: View {
     let preferredWidth: CGFloat?
     let preferredHeight: CGFloat?
     let compactStyle: Bool
+    let compactDensity: CompactDensity
     let isSelected: Bool
     let quickShortcutLabel: String?
     @State private var isHovering = false
@@ -2632,6 +3301,7 @@ private struct SnippetCard: View {
         preferredWidth: CGFloat? = nil,
         preferredHeight: CGFloat? = nil,
         compactStyle: Bool = false,
+        compactDensity: CompactDensity = .low,
         isSelected: Bool = false,
         quickShortcutLabel: String? = nil
     ) {
@@ -2643,8 +3313,53 @@ private struct SnippetCard: View {
         self.preferredWidth = preferredWidth
         self.preferredHeight = preferredHeight
         self.compactStyle = compactStyle
+        self.compactDensity = compactDensity
         self.isSelected = isSelected
         self.quickShortcutLabel = quickShortcutLabel
+    }
+
+    private var compactContentLineLimit: Int {
+        guard compactStyle else { return 8 }
+        switch compactDensity {
+        case .low: return 5
+        case .medium: return 4
+        case .high: return 3
+        }
+    }
+
+    private var compactTitleFontSize: CGFloat {
+        guard compactStyle else { return 14 }
+        switch compactDensity {
+        case .low: return 14
+        case .medium: return 13
+        case .high: return 12
+        }
+    }
+
+    private var compactBodyFontSize: CGFloat {
+        guard compactStyle else { return 13 }
+        switch compactDensity {
+        case .low: return 13
+        case .medium: return 12
+        case .high: return 11
+        }
+    }
+
+    private var compactFooterFontSize: CGFloat {
+        guard compactStyle else { return 10 }
+        switch compactDensity {
+        case .low, .medium: return 10
+        case .high: return 9
+        }
+    }
+
+    private var compactPadding: CGFloat {
+        guard compactStyle else { return 10 }
+        switch compactDensity {
+        case .low: return 8
+        case .medium: return 7
+        case .high: return 6
+        }
     }
 
     var body: some View {
@@ -2690,13 +3405,13 @@ private struct SnippetCard: View {
             }
 
             Text(snippet.displayTitle)
-                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .font(.system(size: compactTitleFontSize, weight: .semibold, design: .rounded))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
 
             Text(snippet.displayText)
-                .lineLimit(compactStyle ? 5 : 8)
-                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .lineLimit(compactContentLineLimit)
+                .font(.system(size: compactBodyFontSize, weight: .medium, design: .rounded))
                 .foregroundStyle(.primary)
 
             if !snippet.tags.isEmpty {
@@ -2709,13 +3424,13 @@ private struct SnippetCard: View {
 
             HStack(spacing: 6) {
                 Image(systemName: "clock")
-                    .font(.system(size: 10))
+                    .font(.system(size: compactFooterFontSize))
                 Text(ClipboardTimeFormatter.shared.string(from: snippet.timestamp))
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .font(.system(size: compactFooterFontSize, weight: .medium, design: .rounded))
             }
             .foregroundStyle(.secondary)
         }
-        .padding(compactStyle ? 8 : 10)
+        .padding(compactPadding)
         .frame(width: preferredWidth, height: preferredHeight, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)

@@ -33,7 +33,9 @@ final class FloatingPanel: NSPanel, NSWindowDelegate {
                 width: compactPanelWidth,
                 height: CompactPanelLayout.height(
                     for: NSScreen.main,
-                    size: settings.compactPanelSize
+                    size: settings.compactPanelSize,
+                    density: settings.compactDensity,
+                    position: settings.compactPanelPosition
                 )
             ),
             styleMask: [.borderless],
@@ -141,7 +143,14 @@ final class FloatingPanel: NSPanel, NSWindowDelegate {
     }
 
     func updatePlacementIfVisible(animated: Bool = true) {
-        guard isVisible, let screen = targetScreenForCurrentFrame() else { return }
+        guard isVisible else { return }
+        let targetScreen: NSScreen?
+        if settings.compactModeEnabled && settings.compactPanelPosition == .followMouse {
+            targetScreen = screenContainingMouse() ?? targetScreenForCurrentFrame()
+        } else {
+            targetScreen = targetScreenForCurrentFrame()
+        }
+        guard let screen = targetScreen else { return }
         let frames = placementFrames(for: settings.panelEdge, on: screen)
         if animated {
             animate(to: frames.shown, duration: 0.16)
@@ -186,9 +195,21 @@ final class FloatingPanel: NSPanel, NSWindowDelegate {
             isHiding = false
             return
         }
-        let frames = placementFrames(for: settings.panelEdge, on: screen)
+        let hiddenTargetFrame: NSRect
+        if settings.compactModeEnabled && settings.compactPanelPosition == .followMouse {
+            // 关闭时沿当前可见位置做位移，不再重新跟随鼠标重算锚点，避免出现先跳位再淡出的感觉。
+            hiddenTargetFrame = NSRect(
+                x: frame.origin.x,
+                y: frame.origin.y + travelDistance,
+                width: frame.width,
+                height: frame.height
+            )
+        } else {
+            let frames = placementFrames(for: settings.panelEdge, on: screen)
+            hiddenTargetFrame = frames.hidden
+        }
         level = .floating
-        animate(to: frames.hidden, duration: 0.14) { [weak self] in
+        animate(to: hiddenTargetFrame, duration: 0.14) { [weak self] in
             guard let self else { return }
             self.level = .normal
             self.orderOut(nil)
@@ -219,7 +240,11 @@ final class FloatingPanel: NSPanel, NSWindowDelegate {
 
     private func compactPlacementFrames(on screen: NSScreen) -> (shown: NSRect, hidden: NSRect) {
         let visible = screen.visibleFrame
-        let shown = compactShownFrame(on: screen, visibleFrame: visible)
+        let shown = compactShownFrame(
+            on: screen,
+            visibleFrame: visible,
+            position: settings.compactPanelPosition
+        )
         let hidden = NSRect(
             x: shown.origin.x,
             y: shown.origin.y + travelDistance,
@@ -265,20 +290,43 @@ final class FloatingPanel: NSPanel, NSWindowDelegate {
         }
     }
 
-    private func compactShownFrame(on screen: NSScreen, visibleFrame: NSRect) -> NSRect {
+    private func compactShownFrame(
+        on screen: NSScreen,
+        visibleFrame: NSRect,
+        position: CompactPanelPosition
+    ) -> NSRect {
         let width = min(compactPanelWidth, visibleFrame.width - compactPanelMargin * 2)
-        let height = CompactPanelLayout.height(for: screen, size: settings.compactPanelSize)
-        let anchorFrame = statusButtonFrameOnScreen() ?? fallbackAnchorFrame(in: screen.frame)
-
-        let preferredX = anchorFrame.midX - width / 2
+        let height = CompactPanelLayout.height(
+            for: screen,
+            size: settings.compactPanelSize,
+            density: settings.compactDensity,
+            position: settings.compactPanelPosition
+        )
         let maxX = visibleFrame.maxX - width - compactPanelMargin
-        let x = min(max(preferredX, visibleFrame.minX + compactPanelMargin), maxX)
-
-        let preferredY = anchorFrame.minY - height - compactPanelMargin
         let maxY = visibleFrame.maxY - height - compactPanelMargin
-        let y = max(visibleFrame.minY + compactPanelMargin, min(preferredY, maxY))
+        let minX = visibleFrame.minX + compactPanelMargin
+        let minY = visibleFrame.minY + compactPanelMargin
 
-        return NSRect(x: x, y: y, width: width, height: height)
+        switch position {
+        case .statusItem:
+            let anchorFrame = statusButtonFrameOnScreen() ?? fallbackAnchorFrame(in: screen.frame)
+            let preferredX = anchorFrame.midX - width / 2
+            let preferredY = anchorFrame.minY - height - compactPanelMargin
+            let x = min(max(preferredX, minX), maxX)
+            let y = max(minY, min(preferredY, maxY))
+            return NSRect(x: x, y: y, width: width, height: height)
+        case .followMouse:
+            let mouseLocation = NSEvent.mouseLocation
+            let preferredX = mouseLocation.x - width / 2
+            let preferredY = mouseLocation.y - height - compactPanelMargin
+            let x = min(max(preferredX, minX), maxX)
+            let y = max(minY, min(preferredY, maxY))
+            return NSRect(x: x, y: y, width: width, height: height)
+        case .screenCenter:
+            let x = visibleFrame.minX + (visibleFrame.width - width) / 2
+            let y = visibleFrame.minY + (visibleFrame.height - height) / 2
+            return NSRect(x: x, y: y, width: width, height: height)
+        }
     }
 
     private func hiddenFrame(from shownFrame: NSRect, edge: PanelEdge, visibleFrame: NSRect) -> NSRect {
@@ -315,12 +363,18 @@ final class FloatingPanel: NSPanel, NSWindowDelegate {
     }
 
     private func targetScreenForShow() -> NSScreen? {
-        if settings.compactModeEnabled,
-           let buttonScreen = statusButtonProvider?()?.window?.screen {
-            return buttonScreen
+        if settings.compactModeEnabled {
+            switch settings.compactPanelPosition {
+            case .statusItem:
+                if let buttonScreen = statusButtonProvider?()?.window?.screen {
+                    return buttonScreen
+                }
+                return screenContainingMouse() ?? NSScreen.main ?? NSScreen.screens.first
+            case .followMouse, .screenCenter:
+                return screenContainingMouse() ?? NSScreen.main ?? NSScreen.screens.first
+            }
         }
-        let mouseLocation = NSEvent.mouseLocation
-        return NSScreen.screens.first(where: { $0.frame.contains(mouseLocation) }) ?? NSScreen.main ?? NSScreen.screens.first
+        return screenContainingMouse() ?? NSScreen.main ?? NSScreen.screens.first
     }
 
     private func targetScreenForCurrentFrame() -> NSScreen? {
@@ -354,6 +408,11 @@ final class FloatingPanel: NSPanel, NSWindowDelegate {
             width: 20,
             height: 20
         )
+    }
+
+    private func screenContainingMouse() -> NSScreen? {
+        let mouseLocation = NSEvent.mouseLocation
+        return NSScreen.screens.first(where: { $0.frame.contains(mouseLocation) })
     }
 
     private func selectionDirection(for keyCode: UInt16) -> String? {
