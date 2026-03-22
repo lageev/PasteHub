@@ -595,16 +595,52 @@ private struct HotkeyTab: View {
 
                     SettingsSeparator()
 
+                    SettingsRow(
+                        title: "打开设置窗口",
+                        subtitle: "全局触发，默认未设置。点击录制后按下新的快捷键组合。"
+                    ) {
+                        OptionalHotkeyRecorder(
+                            displayString: settings.showSettingsHotkeyDisplayString,
+                            isSet: settings.showSettingsHotkey != nil,
+                            onRecorded: { code, mods in
+                                settings.setShowSettingsHotkey(keyCode: code, modifiers: mods)
+                            },
+                            onClear: {
+                                settings.clearShowSettingsHotkey()
+                            }
+                        )
+                    }
+
+                    SettingsSeparator()
+
+                    SettingsRow(
+                        title: "清空历史记录",
+                        subtitle: "全局触发，默认未设置。建议使用不易误触的组合。"
+                    ) {
+                        OptionalHotkeyRecorder(
+                            displayString: settings.clearHistoryHotkeyDisplayString,
+                            isSet: settings.clearHistoryHotkey != nil,
+                            onRecorded: { code, mods in
+                                settings.setClearHistoryHotkey(keyCode: code, modifiers: mods)
+                            },
+                            onClear: {
+                                settings.clearHistoryHotkeyBinding()
+                            }
+                        )
+                    }
+
+                    SettingsSeparator()
+
                     SettingsHint(text: "单击卡片会先复制内容，再尝试自动键入。首次授予辅助功能权限后建议重启 PasteHub。")
+                    SettingsHint(text: "避免给多个动作设置同一组快捷键，以免部分动作不生效。")
                 }
             }
 
             SettingsCard(
-                title: "内置快捷入口",
+                title: "其他内置入口",
                 subtitle: ""
             ) {
                 VStack(alignment: .leading, spacing: 12) {
-                    ShortcutRow(label: "打开设置", shortcut: "\u{2318},")
                     ShortcutRow(label: "退出应用", shortcut: "\u{2318}Q")
                     ShortcutRow(label: "完成键入条目", shortcut: "单击卡片")
                     ShortcutRow(label: "重新复制 / 标签 / 删除", shortcut: "卡片按钮或右键菜单")
@@ -722,6 +758,30 @@ private struct ShortcutRow: View {
                 )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct OptionalHotkeyRecorder: View {
+    let displayString: String
+    let isSet: Bool
+    let onRecorded: (UInt16, UInt) -> Void
+    let onClear: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            HotkeyRecorderButton(
+                displayString: displayString,
+                onRecorded: onRecorded
+            )
+
+            if isSet {
+                Button("清除") {
+                    onClear()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
     }
 }
 

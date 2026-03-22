@@ -112,6 +112,46 @@ final class SettingsManager {
         didSet { UserDefaults.standard.set(Int(hotkeyModifiers), forKey: "hotkeyModifiers") }
     }
 
+    private(set) var showSettingsHotkeyKeyCode: UInt16? {
+        didSet {
+            if let showSettingsHotkeyKeyCode {
+                UserDefaults.standard.set(Int(showSettingsHotkeyKeyCode), forKey: "showSettingsHotkeyKeyCode")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "showSettingsHotkeyKeyCode")
+            }
+        }
+    }
+
+    private(set) var showSettingsHotkeyModifiers: UInt {
+        didSet {
+            if showSettingsHotkeyKeyCode == nil {
+                UserDefaults.standard.removeObject(forKey: "showSettingsHotkeyModifiers")
+            } else {
+                UserDefaults.standard.set(Int(showSettingsHotkeyModifiers), forKey: "showSettingsHotkeyModifiers")
+            }
+        }
+    }
+
+    private(set) var clearHistoryHotkeyKeyCode: UInt16? {
+        didSet {
+            if let clearHistoryHotkeyKeyCode {
+                UserDefaults.standard.set(Int(clearHistoryHotkeyKeyCode), forKey: "clearHistoryHotkeyKeyCode")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "clearHistoryHotkeyKeyCode")
+            }
+        }
+    }
+
+    private(set) var clearHistoryHotkeyModifiers: UInt {
+        didSet {
+            if clearHistoryHotkeyKeyCode == nil {
+                UserDefaults.standard.removeObject(forKey: "clearHistoryHotkeyModifiers")
+            } else {
+                UserDefaults.standard.set(Int(clearHistoryHotkeyModifiers), forKey: "clearHistoryHotkeyModifiers")
+            }
+        }
+    }
+
     var excludedApps: [ExcludedApp] {
         didSet {
             guard let data = try? JSONEncoder().encode(excludedApps) else { return }
@@ -199,6 +239,30 @@ final class SettingsManager {
             hotkeyModifiers = NSEvent.ModifierFlags([.command, .shift]).rawValue
         }
 
+        if let v = d.object(forKey: "showSettingsHotkeyKeyCode") as? Int, v >= 0 {
+            showSettingsHotkeyKeyCode = UInt16(v)
+            if let mods = d.object(forKey: "showSettingsHotkeyModifiers") as? Int, mods > 0 {
+                showSettingsHotkeyModifiers = UInt(mods)
+            } else {
+                showSettingsHotkeyModifiers = NSEvent.ModifierFlags.command.rawValue
+            }
+        } else {
+            showSettingsHotkeyKeyCode = nil
+            showSettingsHotkeyModifiers = 0
+        }
+
+        if let v = d.object(forKey: "clearHistoryHotkeyKeyCode") as? Int, v >= 0 {
+            clearHistoryHotkeyKeyCode = UInt16(v)
+            if let mods = d.object(forKey: "clearHistoryHotkeyModifiers") as? Int, mods > 0 {
+                clearHistoryHotkeyModifiers = UInt(mods)
+            } else {
+                clearHistoryHotkeyModifiers = NSEvent.ModifierFlags.command.rawValue
+            }
+        } else {
+            clearHistoryHotkeyKeyCode = nil
+            clearHistoryHotkeyModifiers = 0
+        }
+
         if let data = d.data(forKey: "excludedApps"),
            let decoded = try? JSONDecoder().decode([ExcludedApp].self, from: data) {
             excludedApps = decoded
@@ -250,19 +314,67 @@ final class SettingsManager {
         onHotkeyChanged?()
     }
 
+    func setShowSettingsHotkey(keyCode: UInt16, modifiers: UInt) {
+        showSettingsHotkeyKeyCode = keyCode
+        showSettingsHotkeyModifiers = modifiers
+        onHotkeyChanged?()
+    }
+
+    func clearShowSettingsHotkey() {
+        showSettingsHotkeyKeyCode = nil
+        showSettingsHotkeyModifiers = 0
+        onHotkeyChanged?()
+    }
+
+    func setClearHistoryHotkey(keyCode: UInt16, modifiers: UInt) {
+        clearHistoryHotkeyKeyCode = keyCode
+        clearHistoryHotkeyModifiers = modifiers
+        onHotkeyChanged?()
+    }
+
+    func clearHistoryHotkeyBinding() {
+        clearHistoryHotkeyKeyCode = nil
+        clearHistoryHotkeyModifiers = 0
+        onHotkeyChanged?()
+    }
+
     func isAppExcluded(bundleIdentifier: String?) -> Bool {
         guard let id = bundleIdentifier else { return false }
         return excludedApps.contains { $0.bundleIdentifier == id }
     }
 
     var hotkeyDisplayString: String {
+        Self.displayString(for: hotkeyKeyCode, modifiers: hotkeyModifiers)
+    }
+
+    var showSettingsHotkey: (keyCode: UInt16, modifiers: UInt)? {
+        guard let showSettingsHotkeyKeyCode, showSettingsHotkeyModifiers > 0 else { return nil }
+        return (showSettingsHotkeyKeyCode, showSettingsHotkeyModifiers)
+    }
+
+    var clearHistoryHotkey: (keyCode: UInt16, modifiers: UInt)? {
+        guard let clearHistoryHotkeyKeyCode, clearHistoryHotkeyModifiers > 0 else { return nil }
+        return (clearHistoryHotkeyKeyCode, clearHistoryHotkeyModifiers)
+    }
+
+    var showSettingsHotkeyDisplayString: String {
+        guard let hotkey = showSettingsHotkey else { return "未设置" }
+        return Self.displayString(for: hotkey.keyCode, modifiers: hotkey.modifiers)
+    }
+
+    var clearHistoryHotkeyDisplayString: String {
+        guard let hotkey = clearHistoryHotkey else { return "未设置" }
+        return Self.displayString(for: hotkey.keyCode, modifiers: hotkey.modifiers)
+    }
+
+    nonisolated private static func displayString(for keyCode: UInt16, modifiers: UInt) -> String {
         var s = ""
-        let flags = NSEvent.ModifierFlags(rawValue: hotkeyModifiers)
+        let flags = NSEvent.ModifierFlags(rawValue: modifiers)
         if flags.contains(.control) { s += "\u{2303}" }
         if flags.contains(.option) { s += "\u{2325}" }
         if flags.contains(.shift) { s += "\u{21E7}" }
         if flags.contains(.command) { s += "\u{2318}" }
-        s += Self.keyName(for: hotkeyKeyCode)
+        s += Self.keyName(for: keyCode)
         return s
     }
 

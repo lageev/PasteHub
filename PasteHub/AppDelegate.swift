@@ -11,11 +11,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: FloatingPanel!
     private var statusItem: NSStatusItem!
     private var statusMenu: NSMenu!
-    private var hotKeyRef: EventHotKeyRef?
+    private var hotKeyRefs: [UInt32: EventHotKeyRef] = [:]
     private var hotKeyHandlerRef: EventHandlerRef?
     private var settingsWindow: NSWindow?
     private var shouldPresentSettingsAfterPanelHides = false
     private var lastHotKeyTriggerTime: TimeInterval = 0
+    private enum HotKeyActionID: UInt32 {
+        case togglePanel = 1
+        case showSettings = 2
+        case clearHistory = 3
+    }
+
+    private let hotKeySignature = OSType(0x50544842) // 'PTHB'
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         monitor = ClipboardMonitor(store: store, settings: settings)
@@ -301,10 +308,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupHotKey() {
         registerHotKeyHandlerIfNeeded()
-        registerHotKey()
+        registerHotKeys()
     }
 
-    private func handleHotKeyTrigger() {
+    private func handleHotKeyEvent(actionID: HotKeyActionID?) {
+        guard let actionID else { return }
+        if let sw = settingsWindow, sw.isKeyWindow {
+            return
+        }
+
+        switch actionID {
+        case .togglePanel:
+            handleTogglePanelHotKeyTrigger()
+        case .showSettings:
+            showSettings()
+        case .clearHistory:
+            clearHistory()
+        }
+    }
+
+    private func handleTogglePanelHotKeyTrigger() {
         if let sw = settingsWindow, sw.isKeyWindow {
             return
         }
@@ -318,8 +341,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func reloadHotKey() {
-        unregisterHotKey()
-        registerHotKey()
+        unregisterHotKeys()
+        registerHotKeys()
     }
 
     private func registerHotKeyHandlerIfNeeded() {
@@ -332,10 +355,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         InstallEventHandler(
             GetApplicationEventTarget(),
-            { _, _, userData in
+            { _, event, userData in
                 guard let userData else { return noErr }
+                let actionID: HotKeyActionID?
+                if let event {
+                    var hotKeyID = EventHotKeyID()
+                    let status = GetEventParameter(
+                        event,
+                        EventParamName(kEventParamDirectObject),
+                        EventParamType(typeEventHotKeyID),
+                        nil,
+                        MemoryLayout<EventHotKeyID>.size,
+                        nil,
+                        &hotKeyID
+                    )
+                    actionID = status == noErr ? HotKeyActionID(rawValue: hotKeyID.id) : nil
+                } else {
+                    actionID = nil
+                }
                 let delegate = Unmanaged<AppDelegate>.fromOpaque(userData).takeUnretainedValue()
-                Task { @MainActor in delegate.handleHotKeyTrigger() }
+                Task { @MainActor in delegate.handleHotKeyEvent(actionID: actionID) }
                 return noErr
             },
             1,
@@ -345,32 +384,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    private func registerHotKey() {
-        guard hotKeyRef == nil else { return }
+    private func registerHotKeys() {
+        registerHotKey(
+            id: .togglePanel,
+            keyCode: settings.hotkeyKeyCode,
+            modifiers: settings.hotkeyModifiers
+        )
 
-        let hotKeyID = EventHotKeyID(signature: OSType(0x50544842), id: 1) // 'PTHB'
-        let keyCode = UInt32(settings.hotkeyKeyCode)
-        let modifiers = Self.carbonModifiers(from: settings.hotkeyModifiers)
+        if let showSettingsHotkey = settings.showSettingsHotkey {
+            registerHotKey(
+                id: .showSettings,
+                keyCode: showSettingsHotkey.keyCode,
+                modifiers: showSettingsHotkey.modifiers
+            )
+        }
 
-        RegisterEventHotKey(
-            keyCode,
-            modifiers,
+        if let clearHistoryHotkey = settings.clearHistoryHotkey {
+            registerHotKey(
+                id: .clearHistory,
+                keyCode: clearHistoryHotkey.keyCode,
+                modifiers: clearHistoryHotkey.modifiers
+            )
+        }
+    }
+
+    private func registerHotKey(id: HotKeyActionID, keyCode: UInt16, modifiers: UInt) {
+        guard hotKeyRefs[id.rawValue] == nil else { return }
+        var hotKeyRef: EventHotKeyRef?
+        let hotKeyID = EventHotKeyID(signature: hotKeySignature, id: id.rawValue)
+
+        let status = RegisterEventHotKey(
+            UInt32(keyCode),
+            Self.carbonModifiers(from: modifiers),
             hotKeyID,
             GetApplicationEventTarget(),
             0,
             &hotKeyRef
         )
+        guard status == noErr, let hotKeyRef else { return }
+        hotKeyRefs[id.rawValue] = hotKeyRef
     }
 
-    private func unregisterHotKey() {
-        if let hotKeyRef {
+    private func unregisterHotKeys() {
+        for hotKeyRef in hotKeyRefs.values {
             UnregisterEventHotKey(hotKeyRef)
-            self.hotKeyRef = nil
         }
+        hotKeyRefs.removeAll()
     }
 
     private func teardownHotKeyMonitors() {
-        unregisterHotKey()
+        unregisterHotKeys()
         if let hotKeyHandlerRef {
             RemoveEventHandler(hotKeyHandlerRef)
             self.hotKeyHandlerRef = nil
