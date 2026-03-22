@@ -60,9 +60,9 @@ enum CompactDensity: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .low: return "低"
-        case .medium: return "中"
-        case .high: return "高"
+        case .low: return "宽松"
+        case .medium: return "均衡"
+        case .high: return "紧凑"
         }
     }
 }
