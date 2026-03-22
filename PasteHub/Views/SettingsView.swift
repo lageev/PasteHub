@@ -943,18 +943,12 @@ private struct AboutTab: View {
             Spacer(minLength: 0)
 
             VStack(spacing: 10) {
-                HStack(spacing: 16) {
+                HStack(spacing: 6) {
                     AboutIconLink(asset: "SocialXiaohongshu", tip: "小红书", destination: xiaohongshuURL)
                     AboutIconLink(asset: "SocialEmail", tip: "邮箱", destination: URL(string: "mailto:hfl1995@gmail.com")!)
                     AboutIconLink(asset: "SocialWeibo", tip: "微博", destination: weiboURL)
-                }
-
-                HStack(spacing: 6) {
                     AboutFooterLink(icon: "cat.fill", label: "GitHub", destination: githubURL)
-                    Text("·")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.quaternary)
-                    AboutFooterLink(icon: "heart.fill", label: "鸣谢酷安", destination: coolapkURL)
+                    AboutFooterLink(icon: "heart.fill", label: "酷安", destination: coolapkURL)
                 }
 
                 Text("\(version)(\(build))")
@@ -1001,21 +995,62 @@ private struct AboutIconLink: View {
     let tip: String
     let destination: URL
     @State private var isHovering = false
+    @State private var didCopy = false
+
+    private var isMailLink: Bool {
+        destination.scheme?.lowercased() == "mailto"
+    }
 
     var body: some View {
-        Link(destination: destination) {
-            Image(asset)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 22, height: 22)
-                .saturation(isHovering ? 1 : 0)
-                .opacity(isHovering ? 1 : 0.45)
-                .contentShape(Circle())
-                .onHover { isHovering = $0 }
-                .animation(.easeOut(duration: 0.18), value: isHovering)
+        Button {
+            if isMailLink {
+                let email = destination.absoluteString
+                    .replacingOccurrences(of: "mailto:", with: "")
+                    .removingPercentEncoding?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+                guard !email.isEmpty else { return }
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+                pasteboard.setString(email, forType: .string)
+
+                withAnimation(.easeOut(duration: 0.15)) {
+                    didCopy = true
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        didCopy = false
+                    }
+                }
+            } else {
+                NSWorkspace.shared.open(destination)
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(asset)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 14, height: 14)
+                    .saturation(isHovering ? 1 : 0)
+                    .opacity(isHovering ? 1 : 0.55)
+
+                Text(isMailLink && didCopy ? "已复制" : tip)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+            }
+            .foregroundStyle((isHovering || (isMailLink && didCopy)) ? Color.accentColor : .secondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                Capsule()
+                    .fill((isHovering || (isMailLink && didCopy)) ? Color.accentColor.opacity(0.08) : .clear)
+            )
+            .contentShape(Capsule())
+            .onHover { isHovering = $0 }
+            .animation(.easeOut(duration: 0.15), value: isHovering)
+            .animation(.easeOut(duration: 0.15), value: didCopy)
         }
         .buttonStyle(.plain)
-        .help(tip)
+        .help(isMailLink ? (didCopy ? "已复制邮箱地址" : "复制邮箱地址") : tip)
     }
 }
 
