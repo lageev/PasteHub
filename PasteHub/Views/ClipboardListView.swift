@@ -332,7 +332,7 @@ struct ClipboardListView: View {
         } else if isHighDensityPointerCompactMode {
             sourceItems = compactDisplayedHistoryItems
         } else if isCompactMode && usesCompactLinearList {
-            sourceItems = filteredItems
+            sourceItems = visibleHistoryItems.isEmpty ? compactDisplayedHistoryItems : visibleHistoryItems
         } else {
             sourceItems = visibleHistoryItems.isEmpty ? filteredItems : visibleHistoryItems
         }
@@ -346,7 +346,7 @@ struct ClipboardListView: View {
         } else if isHighDensityPointerCompactMode {
             sourceSnippets = compactDisplayedSnippets
         } else if isCompactMode && usesCompactLinearList {
-            sourceSnippets = filteredSnippets
+            sourceSnippets = visibleSnippetItems.isEmpty ? compactDisplayedSnippets : visibleSnippetItems
         } else {
             sourceSnippets = visibleSnippetItems.isEmpty ? filteredSnippets : visibleSnippetItems
         }
@@ -361,7 +361,7 @@ struct ClipboardListView: View {
             return compactDisplayedHistoryItems.first?.id
         }
         if isCompactMode && usesCompactLinearList {
-            return filteredItems.first?.id
+            return (visibleHistoryItems.isEmpty ? compactDisplayedHistoryItems : visibleHistoryItems).first?.id
         }
         return (visibleHistoryItems.isEmpty ? filteredItems : visibleHistoryItems).first?.id
     }
@@ -374,7 +374,7 @@ struct ClipboardListView: View {
             return compactDisplayedSnippets.first?.id
         }
         if isCompactMode && usesCompactLinearList {
-            return filteredSnippets.first?.id
+            return (visibleSnippetItems.isEmpty ? compactDisplayedSnippets : visibleSnippetItems).first?.id
         }
         return (visibleSnippetItems.isEmpty ? filteredSnippets : visibleSnippetItems).first?.id
     }
@@ -503,13 +503,19 @@ struct ClipboardListView: View {
                 selectedSnippetTag = nil
                 selectedHistoryItemID = nil
                 selectedSnippetItemID = nil
+                syncHighDensitySearchModeIfNeeded()
             }
         }
+        .onChange(of: searchText) { _, _ in
+            syncHighDensitySearchModeIfNeeded()
+        }
         .onChange(of: filteredItems.map(\.id)) { _, _ in
+            syncHighDensitySearchModeIfNeeded()
             syncSelectionIfNeeded()
             syncVisibleItemsIfNeeded()
         }
         .onChange(of: filteredSnippets.map(\.id)) { _, _ in
+            syncHighDensitySearchModeIfNeeded()
             syncSelectionIfNeeded()
             syncVisibleItemsIfNeeded()
         }
@@ -1734,6 +1740,33 @@ struct ClipboardListView: View {
         isSearchFocused = false
     }
 
+    private func syncHighDensitySearchModeIfNeeded() {
+        guard isHighDensityPointerCompactMode else { return }
+
+        if queryText.isEmpty {
+            if isSnippetMode {
+                isSnippetMode = false
+                selectedSnippetItemID = nil
+            }
+            return
+        }
+
+        let hasHistoryMatch = !filteredItems.isEmpty
+        let hasSnippetMatch = !filteredSnippets.isEmpty
+
+        if hasSnippetMatch && !hasHistoryMatch {
+            if !isSnippetMode {
+                isSnippetMode = true
+                selectedHistoryItemID = nil
+            }
+        } else {
+            if isSnippetMode {
+                isSnippetMode = false
+                selectedSnippetItemID = nil
+            }
+        }
+    }
+
     private func focusSearchFieldForTyping() {
         DispatchQueue.main.async {
             isSearchFocused = true
@@ -1912,8 +1945,7 @@ struct ClipboardListView: View {
     }
 
     private var shouldBridgeSearchFocusedKeys: Bool {
-        isHighDensityPointerCompactMode
-        && isSearchFocused
+        isSearchFocused
         && (NSApp.keyWindow is FloatingPanel)
     }
 
@@ -2230,8 +2262,11 @@ private struct CompactLinearSnippetRow: View {
         density == .high ? 9 : 10
     }
 
-    private var metaText: String {
-        "片段 · \(ClipboardTimeFormatter.shared.string(from: snippet.timestamp))"
+    private var contentText: String {
+        let text = snippet.content
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? "空内容" : text
     }
 
     var body: some View {
@@ -2247,12 +2282,10 @@ private struct CompactLinearSnippetRow: View {
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
-                if density == .medium {
-                    Text(metaText)
-                        .font(.system(size: metaFontSize, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
+                Text(contentText)
+                    .font(.system(size: metaFontSize, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
 
             Spacer(minLength: 0)
