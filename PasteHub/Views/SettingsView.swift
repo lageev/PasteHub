@@ -262,6 +262,125 @@ private struct SettingsSeparator: View {
     }
 }
 
+private struct CompactDensitySkeletonPicker: View {
+    @Binding var selection: CompactDensity
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(CompactDensity.allCases) { density in
+                Button {
+                    selection = density
+                } label: {
+                    VStack(spacing: 7) {
+                        CompactDensitySkeletonPreview(density: density)
+                            .frame(height: 58)
+                            .padding(.horizontal, 6)
+                            .padding(.top, 6)
+
+                        Text(density.title)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(selection == density ? Color.accentColor : .primary)
+                            .padding(.bottom, 6)
+                    }
+                    .frame(width: 104)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color(nsColor: .windowBackgroundColor))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(
+                                selection == density ? Color.accentColor : Color(nsColor: .separatorColor).opacity(0.45),
+                                lineWidth: selection == density ? 1.5 : 1
+                            )
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+}
+
+private struct CompactDensitySkeletonPreview: View {
+    let density: CompactDensity
+
+    private var rowCount: Int {
+        density == .high ? 4 : 3
+    }
+
+    private var rowHeight: CGFloat {
+        density == .high ? 6 : 8
+    }
+
+    private var rowSpacing: CGFloat {
+        density == .high ? 3 : 4
+    }
+
+    private var iconWidth: CGFloat {
+        density == .high ? 8 : 9
+    }
+
+    private var verticalPadding: CGFloat {
+        switch density {
+        case .low: return 8
+        case .medium: return 6
+        case .high: return 5
+        }
+    }
+
+    private var placeholderColor: Color {
+        Color.secondary.opacity(0.34)
+    }
+
+    @ViewBuilder
+    private var previewContent: some View {
+        if density == .low {
+            HStack(alignment: .top, spacing: 4) {
+                VStack(spacing: 4) {
+                    waterfallCard(height: 17)
+                    waterfallCard(height: 11)
+                }
+
+                VStack(spacing: 4) {
+                    waterfallCard(height: 11)
+                    waterfallCard(height: 17)
+                }
+            }
+        } else {
+            VStack(spacing: rowSpacing) {
+                ForEach(0..<rowCount, id: \.self) { _ in
+                    HStack(spacing: 4) {
+                        RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                            .fill(placeholderColor.opacity(0.75))
+                            .frame(width: iconWidth, height: rowHeight)
+
+                        RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                            .fill(placeholderColor)
+                            .frame(maxWidth: .infinity, minHeight: rowHeight, maxHeight: rowHeight)
+                    }
+                }
+            }
+        }
+    }
+
+    private func waterfallCard(height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 4.5, style: .continuous)
+            .fill(placeholderColor)
+            .frame(maxWidth: .infinity, minHeight: height, maxHeight: height)
+    }
+
+    var body: some View {
+        previewContent
+        .padding(.horizontal, 6)
+        .padding(.vertical, verticalPadding)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color.secondary.opacity(0.08))
+        )
+    }
+}
+
 // MARK: - General
 
 private struct GeneralTab: View {
@@ -277,11 +396,26 @@ private struct GeneralTab: View {
         settings.compactDensity == .high && settings.compactPanelPosition == .followMouse
     }
 
+    private var compactDensitySubtitle: String {
+        "控制同屏可见条目数和单条信息详略。界面越紧凑，同屏显示越多。"
+    }
+
+    private var compactDensityStateHint: String {
+        switch settings.compactDensity {
+        case .low:
+            return "当前档位：宽松。使用卡片瀑布流，单条信息展示更完整，同屏条目较少。"
+        case .medium:
+            return "当前档位：均衡。使用线性列表，保留标题与来源信息，同屏条目更多。"
+        case .high:
+            return "当前档位：紧凑。使用极简线性列表，同屏条目最多，适合快速定位。"
+        }
+    }
+
     private var compactPositionSubtitle: String {
         if settings.compactDensity == .high {
-            return "可在状态栏图标处、鼠标指针附近或屏幕中间呼出。"
+            return "当前档位支持“状态栏图标处 / 跟随鼠标指针 / 屏幕中间”。"
         }
-        return "当前密度仅支持“状态栏图标处”和“屏幕中间”。"
+        return "当前档位不支持“跟随鼠标指针”，仅支持“状态栏图标处 / 屏幕中间”。"
     }
 
     private var compactSizeSubtitle: String {
@@ -291,11 +425,11 @@ private struct GeneralTab: View {
         return "小 / 中 / 大分别按屏幕高度的 45% / 60% / 75% 计算。"
     }
 
-    private var compactModeHint: String {
+    private var compactPanelStateHint: String {
         if isCompactSizeLocked {
-            return "已启用快速列表模式：仅显示最近 10 条，适合跟随鼠标快速粘贴。"
+            return "当前状态：紧凑 + 跟随鼠标指针。面板固定为最近 10 条，优先快速粘贴。"
         }
-        return "提示：仅高密度支持“跟随鼠标指针”。"
+        return "当前状态：\(settings.compactDensity.title)档位 · \(settings.compactPanelPosition.title) · 面板\(settings.compactPanelSize.title)尺寸。"
     }
 
     var body: some View {
@@ -351,18 +485,14 @@ private struct GeneralTab: View {
 
                     if settings.compactModeEnabled {
                         SettingsRow(
-                            title: "密度调节",
-                            subtitle: "低 / 中 / 高。密度越高，列表信息更紧凑。"
+                            title: "显示密度",
+                            subtitle: compactDensitySubtitle,
+                            accessoryColumnWidth: 340
                         ) {
-                            Picker("密度调节", selection: $settings.compactDensity) {
-                                ForEach(CompactDensity.allCases) { density in
-                                    Text(density.title).tag(density)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-                            .labelsHidden()
-                            .frame(width: 210, alignment: .trailing)
+                            CompactDensitySkeletonPicker(selection: $settings.compactDensity)
                         }
+
+                        SettingsHint(text: compactDensityStateHint)
 
                         SettingsSeparator()
 
@@ -397,7 +527,7 @@ private struct GeneralTab: View {
                             .disabled(isCompactSizeLocked)
                         }
 
-                        SettingsHint(text: compactModeHint)
+                        SettingsHint(text: compactPanelStateHint)
                     } else {
                         SettingsRow(
                             title: "默认弹出位置",
